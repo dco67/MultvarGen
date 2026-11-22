@@ -1,0 +1,398 @@
+# Comprendre ce que le générateur construit {#sec-generateur}
+
+```{r}
+#| include: false
+source("_common.R")
+L1 <- fil$loadings
+```
+
+::: {.callout-tip title="Objectifs d'apprentissage"}
+À la fin de ce chapitre, vous devriez être capable de :
+
+- décrire le modèle factoriel $\mathbf{X} = \boldsymbol{\Lambda}\mathbf{F} + \boldsymbol{\varepsilon}$ et identifier le rôle de chacune de ses composantes;
+- distinguer une charge principale d'une charge secondaire, et expliquer leur effet sur la netteté d'une structure factorielle;
+- reconnaître un item à formulation inversée et une structure bifactorielle dans la matrice des charges;
+- définir la communalité et la composante propre d'une variable, et les relier à sa variance totale;
+- expliquer comment $\boldsymbol{\Lambda}$ et $\boldsymbol{\Phi}$ déterminent conjointement $\boldsymbol{\Sigma}$;
+- distinguer la structure de covariance et la forme des distributions comme deux dimensions indépendantes d'un scénario de simulation;
+- distinguer la structure latente initiale des transformations de réponse (non-invariance, styles de réponse, codage Likert et données manquantes) appliquées ensuite, dans cet ordre;
+- expliquer pourquoi une corrélation observée dans un échantillon diffère presque toujours de la corrélation populationnelle correspondante.
+:::
+
+::: {.callout-important title="Idée centrale"}
+Le générateur [MultvarGen](https://shiny.dcstats.org/MultvarGen) ne spécifie jamais directement les corrélations entre les variables observées. Il définit plutôt une structure latente — des facteurs, des charges factorielles et des corrélations entre facteurs — qui **engendre** ces corrélations selon $\boldsymbol{\Sigma} = \boldsymbol{\Lambda}\boldsymbol{\Phi}\boldsymbol{\Lambda}^{\mathsf T} + \boldsymbol{\Theta}$. Comprendre cette logique permet de savoir quel paramètre modifier pour obtenir un type de structure recherché, plutôt que d'ajuster les contrôles au hasard.
+:::
+
+::: {.callout-warning title="Pièges classiques"}
+- Confondre la corrélation entre **facteurs latents** ($\boldsymbol{\Phi}$) et la corrélation entre **variables observées** : ce ne sont pas les mêmes nombres, la seconde résultant de la première combinée aux charges factorielles.
+- Croire qu'une charge secondaire nulle empêche toute corrélation entre des variables associées à des facteurs différents : même sans charges secondaires, deux variables de facteurs distincts peuvent être corrélées dès que $\boldsymbol{\Phi}$ n'est pas diagonale.
+- Confondre la communalité (variance totale expliquée par l'ensemble des facteurs) avec la charge principale : la communalité dépend de **toutes** les charges d'une variable, pas seulement de sa charge principale.
+- Interpréter un écart entre corrélation observée et corrélation populationnelle comme une erreur du générateur, alors qu'il s'agit d'une fluctuation d'échantillonnage normale et attendue.
+- Oublier que, dans une simulation multigroupe de référence, la structure de mesure ($\boldsymbol{\Lambda}$, $\boldsymbol{\Theta}$ et, pour les données Likert, les seuils) demeure commune à tous les groupes. Une option de DIF permet précisément de déroger de façon ciblée à cette condition.
+:::
+
+Avant de modifier les paramètres du générateur, il est utile de comprendre la logique générale selon laquelle les données sont produites. L'application repose sur un modèle factoriel : les variables que nous observons sont construites à partir d'un nombre plus petit de variables latentes, appelées **facteurs**.
+
+Cette façon de générer les données est naturellement adaptée à l'analyse factorielle. Elle possède toutefois un intérêt beaucoup plus général. En faisant varier les facteurs, leurs relations, les charges factorielles et les caractéristiques des groupes, on peut produire une grande variété de structures de covariance utiles pour l'étude des méthodes multivariées.
+
+## Des facteurs latents aux variables observées
+
+Supposons que nous souhaitions générer plusieurs variables observées $X_1, X_2, \ldots, X_p$. Le modèle général utilisé par le générateur peut s'écrire :
+
+$$
+\mathbf{X} = \boldsymbol{\Lambda}\mathbf{F} + \boldsymbol{\varepsilon}.
+$$
+
+Dans cette expression :
+
+- $\mathbf{X}$ contient les variables observées;
+- $\mathbf{F}$ contient les facteurs latents;
+- $\boldsymbol{\Lambda}$ est la matrice des charges factorielles;
+- $\boldsymbol{\varepsilon}$ représente les composantes propres aux variables observées.
+
+Une variable peut donc être considérée comme la combinaison de deux sources de variation : une partie associée aux facteurs communs et une partie qui lui est propre.
+
+Par exemple, dans un modèle à deux facteurs, une variable pourrait être principalement associée au premier facteur :
+
+$$
+X_1 = \lambda_{11}F_1 + \varepsilon_1.
+$$
+
+Une autre variable pourrait être principalement associée au deuxième :
+
+$$
+X_2 = \lambda_{22}F_2 + \varepsilon_2.
+$$
+
+Si une variable possède également une charge secondaire, elle peut dépendre de plusieurs facteurs :
+
+$$
+X_3 = \lambda_{31}F_1 + \lambda_{32}F_2 + \varepsilon_3.
+$$
+
+C'est cette combinaison de facteurs communs et de composantes propres qui produit les corrélations entre les variables observées.
+
+## Les charges factorielles
+
+Une **charge factorielle** décrit l'importance de la relation entre une variable observée et un facteur latent.
+
+Dans le générateur, chaque variable possède un facteur principal. La charge associée à ce facteur constitue sa **charge principale**. Des charges sur d'autres facteurs peuvent également être ajoutées; elles sont alors appelées **charges secondaires** ou *cross-loadings*.
+
+Une structure comprenant de fortes charges principales et peu de charges secondaires produit généralement des groupes de variables relativement faciles à associer à leurs facteurs respectifs. À l'inverse, des charges principales plus faibles et des charges secondaires plus nombreuses rendent la structure moins nette.
+
+Cette propriété sera particulièrement utile lorsque nous construirons des scénarios destinés à l'analyse factorielle exploratoire.
+
+### Des charges négatives : les items inversés
+
+Dans un questionnaire, certains items sont formulés en sens inverse : « Je me sens souvent tendu » et « Je reste calme en toutes circonstances » mesurent le même trait, mais dans des directions opposées. Dans le modèle, un tel item reçoit une charge **négative** sur son facteur. Il corrèle donc négativement avec les autres items de son échelle tant qu'il n'est pas recodé.
+
+Le générateur peut inverser environ 20 %, un tiers ou la moitié des items de chaque facteur. Inverser un item revient à changer le signe de toute sa ligne de $\boldsymbol{\Lambda}$ : sa communalité et sa composante propre ne changent pas, seule la direction de la relation change.
+
+### Un facteur commun à tous les items : la structure bifactorielle
+
+Dans une structure à **facteurs corrélés**, chaque item dépend surtout de son propre facteur, et ce sont les facteurs qui sont reliés entre eux. Une **structure bifactorielle** explique autrement les mêmes relations : un **facteur général** (noté `FG`) influence tous les items, et des **facteurs spécifiques** ($F_1, F_2, \ldots$) ne rendent compte que de ce que les items d'une même échelle partagent en plus. Tous ces facteurs sont orthogonaux. Pour un item $j$ de l'échelle $k$ :
+
+$$
+X_j = \lambda_{jG}\,F_G + \lambda_{jk}\,F_k + \varepsilon_j.
+$$
+
+Cette structure est fréquente en psychopathologie ou en évaluation des apprentissages, lorsqu'un score total a du sens alors que des sous-échelles existent aussi. Le chapitre 5 montre comment juger si le score total est « essentiellement unidimensionnel ».
+
+::: {.callout-note title="Une structure plus réaliste n'est pas nécessairement plus simple"}
+Dans des données réelles, les variables sont rarement des indicateurs parfaitement purs d'un seul facteur. Les charges secondaires permettent de générer des structures moins idéalisées et d'étudier le comportement des méthodes statistiques lorsque la structure factorielle est moins nette.
+:::
+
+## Communalité et composante propre
+
+La partie de la variance d'une variable qui est expliquée par les facteurs communs constitue sa **communalité**.
+
+Pour une variable $X_j$, on peut représenter schématiquement sa variance comme :
+
+$$
+\operatorname{Var}(X_j)
+=
+\text{variance commune}
++
+\text{variance propre}.
+$$
+
+Lorsque les variables sont standardisées, leur variance totale vaut 1. Une communalité élevée signifie donc qu'une grande partie de la variation de la variable est expliquée par les facteurs.
+
+La composante restante correspond à la variation qui n'est pas expliquée par ces facteurs. Dans le générateur, cette composante est introduite par le terme résiduel $\varepsilon_j$.
+
+Les valeurs exactes des communalités et des composantes propres générées peuvent être consultées dans l'onglet **Structure populationnelle** de l'application. La @fig-communalites les montre pour la population fil rouge : la barre de chaque item fait exactement 1, partagée entre la variance commune et la variance propre.
+
+```{r}
+#| label: fig-communalites
+#| fig-cap: "Décomposition de la variance des 15 items de la population fil rouge (3 facteurs, charges principales élevées, graine 2024). Chaque barre totalise 1."
+#| fig-height: 3.3
+dv <- data.frame(item = factor(rownames(L1), levels = rownames(L1)),
+                 facteur = paste0("F", fil$factor_assignments),
+                 commune = fil$communalities, propre = fil$uniquenesses)
+dl <- rbind(data.frame(dv[, 1:2], part = "Variance commune (communalité)", v = dv$commune),
+            data.frame(dv[, 1:2], part = "Variance propre (unicité)", v = dv$propre))
+dl$part <- factor(dl$part, levels = c("Variance propre (unicité)", "Variance commune (communalité)"))
+ggplot(dl, aes(item, v, fill = part)) + geom_col(width = 0.75) +
+  facet_grid(~facteur, scales = "free_x", space = "free_x") +
+  scale_fill_manual(values = c("Variance commune (communalité)" = pal$bleu,
+                               "Variance propre (unicité)" = "#f2c9a8"), name = NULL,
+                    breaks = c("Variance commune (communalité)", "Variance propre (unicité)")) +
+  scale_y_continuous(labels = axe_fr, breaks = seq(0, 1, 0.25)) +
+  labs(x = NULL, y = "Part de la variance")
+```
+
+Avec des charges principales entre 0,65 et 0,80 et aucune charge secondaire, la communalité d'un item est simplement le carré de sa charge : elle varie ici de `r fr(min(fil$communalities), 2)` à `r fr(max(fil$communalities), 2)`. Environ la moitié de la variance de chaque item est donc commune; le reste est propre à l'item.
+
+## Les facteurs peuvent être corrélés
+
+Les facteurs ne doivent pas nécessairement être indépendants. Le générateur permet de produire des facteurs dont les corrélations sont nulles, faibles, modérées ou plus importantes.
+
+Leurs relations sont décrites par une matrice de corrélations factorielles, que nous noterons $\boldsymbol{\Phi}$.
+
+Avec trois facteurs, par exemple :
+
+$$
+\boldsymbol{\Phi}
+=
+\begin{pmatrix}
+1 & \phi_{12} & \phi_{13} \\
+\phi_{12} & 1 & \phi_{23} \\
+\phi_{13} & \phi_{23} & 1
+\end{pmatrix}.
+$$
+
+Lorsque les facteurs sont corrélés, les variables associées à des facteurs différents peuvent elles-mêmes présenter des corrélations. La structure observée dépend donc à la fois des charges factorielles et des relations entre les facteurs.
+
+Cette possibilité est importante pour les analyses factorielles obliques, mais également pour plusieurs autres méthodes multivariées.
+
+## De la structure factorielle à la matrice des variables
+
+Les charges factorielles et les relations entre facteurs déterminent ensemble une grande partie de la structure de covariance des variables observées.
+
+Dans le cas général, cette structure peut être exprimée par :
+
+$$
+\boldsymbol{\Sigma}
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}
++
+\boldsymbol{\Theta},
+$$
+
+où $\boldsymbol{\Theta}$ représente la matrice des variances résiduelles.
+
+Cette équation est au cœur du générateur. Elle explique notamment pourquoi le modèle factoriel constitue un outil pratique pour produire des données multivariées : plutôt que de spécifier individuellement toutes les corrélations entre les variables, on définit une structure latente qui les engendre.
+
+La @fig-matrices montre cette équation à l'œuvre pour la population fil rouge. La matrice $\boldsymbol{\Lambda}$ (à gauche) contient une seule charge non nulle par ligne; $\boldsymbol{\Phi}$ (au centre) relie les trois facteurs à 0,30; la matrice $\boldsymbol{\Sigma}$ qui en résulte (à droite) présente trois blocs nets, reliés entre eux par des corrélations plus faibles.
+
+```{r}
+#| label: fig-matrices
+#| fig-cap: "De la structure latente à la matrice des variables (population fil rouge). Les corrélations entre blocs ne proviennent que de la corrélation de 0,30 entre facteurs."
+#| fig-width: 8
+#| fig-height: 3.6
+#| out-width: "100%"
+library(patchwork)
+gS <- fil_S; diag(gS) <- NA
+(heat(L1, "Λ (charges)", lim = c(-1, 1)) + theme(legend.position = "none")) +
+  (heat(fil$factor_correlations, "Φ (facteurs)", texte = TRUE) + theme(legend.position = "none")) +
+  heat(gS, "Σ (variables)", lim = c(-1, 1)) +
+  plot_layout(widths = c(3, 3, 15))
+```
+
+On peut retrouver n'importe quelle corrélation à la main. Deux items du même facteur, par exemple `V1` et `V2`, sont reliés par le produit de leurs charges :
+
+$$
+\rho_{12} = \lambda_{11}\,\lambda_{21} = `r frm(L1[1, 1])` \times `r frm(L1[2, 1])` = `r frm(fil_S[1, 2])`.
+$$
+
+Deux items de facteurs différents, comme `V1` (facteur 1) et `V6` (facteur 2), ne partagent aucun facteur; leur corrélation passe par la corrélation entre les facteurs :
+
+$$
+\rho_{16} = \lambda_{11}\,\phi_{12}\,\lambda_{62} = `r frm(L1[1, 1])` \times 0{,}30 \times `r frm(L1[6, 2])` = `r frm(fil_S[1, 6])`.
+$$
+
+::: {.callout-tip title="Pourquoi utiliser des facteurs pour générer des données multivariées ?"}
+Avec 20 variables, une matrice de corrélations comporte déjà 190 corrélations distinctes. Une structure factorielle permet de produire une matrice cohérente à partir d'un nombre beaucoup plus petit de paramètres ayant une interprétation claire.
+:::
+
+## Distribution des variables
+
+La structure de covariance ne décrit pas toutes les caractéristiques d'un jeu de données. Deux populations peuvent posséder des relations similaires entre leurs variables tout en présentant des distributions différentes.
+
+Le générateur permet notamment de produire des données approximativement normales ou d'introduire de l'asymétrie.
+
+Cette possibilité permet de distinguer deux dimensions d'un scénario de simulation :
+
+1. la **structure multivariée**, déterminée principalement par les facteurs, les charges et leurs relations;
+2. la **forme des distributions**, qui décrit notamment le degré d'asymétrie des variables observées.
+
+On pourra ainsi étudier une même structure factorielle dans des conditions distributionnelles différentes.
+
+Le mécanisme exact utilisé pour introduire l'asymétrie tout en préservant autant que possible la structure factorielle sera présenté dans l'appendice technique.
+
+## Des réponses continues aux données analysées
+
+Le modèle factoriel produit d'abord des réponses continues sous-jacentes. L'application peut ensuite les conserver telles quelles ou les transformer en catégories Likert — de 2 (réponse dichotomique) à 7 catégories — par l'application de seuils. Le codage ordinal modifie les fréquences observées et peut atténuer les corrélations de Pearson; pour une analyse factorielle de données ordinales, les corrélations polychoriques sont généralement plus appropriées.
+
+Les seuils peuvent être communs à tous les items ou varier d'un item à l'autre. Cette seconde option évite de produire artificiellement le même profil de fréquences pour chaque variable. Certains répondants peuvent aussi présenter un style de réponse cohérent entre leurs items : tendance au milieu, tendance aux extrêmes ou acquiescement. Ces mécanismes ne remplacent pas la structure factorielle; ils ajoutent une source contrôlée de variance de méthode.
+
+Enfin, les valeurs manquantes sont appliquées au jeu de données final. L'ordre des opérations est toujours le même, et la carte **Ordre de génération** de l'application le rappelle : facteurs latents, réponses continues, non-invariance d'intercept, styles de réponse, codage Likert (avec un éventuel DIF de seuils), puis données manquantes. Elles ne changent pas la population factorielle qui a servi à produire les réponses, mais elles changent l'information effectivement disponible pour l'analyse. Le générateur permet de distinguer des absences entièrement aléatoires (MCAR), expliquées par une variable observée (MAR) ou liées à la réponse elle-même (MNAR). Cette distinction est fondamentale : les mêmes cellules vides d'un fichier peuvent avoir des mécanismes très différents et ne justifient pas nécessairement le même traitement.
+
+## Une population ou plusieurs groupes
+
+Le générateur peut produire un seul groupe ou plusieurs groupes.
+
+Dans le cas le plus simple, toutes les observations proviennent d'une même population. Lorsque plusieurs groupes sont demandés, chaque observation reçoit également un identifiant de groupe, par exemple `G1`, `G2` ou `G3`.
+
+Les groupes partagent la même structure de mesure : les variables et leur organisation factorielle demeurent les mêmes. Le générateur permet cependant de faire varier certaines propriétés des facteurs entre les groupes.
+
+Deux types de différences sont particulièrement importants.
+
+### Différences de moyennes factorielles
+
+Les groupes peuvent présenter des moyennes différentes sur les facteurs latents.
+
+Si deux groupes possèdent la même structure factorielle mais que le second obtient une moyenne plus élevée sur un facteur, les variables associées à ce facteur auront elles aussi tendance à présenter des moyennes différentes.
+
+Ce mécanisme permet notamment de créer des scénarios destinés à la comparaison multivariée de groupes.
+
+### Différences de covariance factorielle
+
+Les relations et les variances des facteurs peuvent également différer entre les groupes.
+
+Les groupes peuvent donc avoir une structure de mesure commune tout en présentant des structures de covariance différentes.
+
+Cette possibilité sera particulièrement utile lorsque nous construirons des scénarios de classification. Une situation dans laquelle les groupes ont des matrices de covariance semblables correspond naturellement aux conditions favorables à une analyse discriminante linéaire, tandis que des matrices différentes permettent d'étudier des situations mieux adaptées à une classification quadratique.
+
+## Population et échantillon
+
+Une distinction fondamentale doit être maintenue tout au long du manuel : **le générateur définit une population, mais l'utilisateur analyse un échantillon tiré de cette population**.
+
+Si la corrélation populationnelle entre deux variables vaut, par exemple, $0{,}40$, la corrélation calculée dans un échantillon ne sera presque jamais exactement égale à $0{,}40$.
+
+Elle pourrait être :
+
+$$
+r = 0{,}36,
+$$
+
+dans un échantillon et :
+
+$$
+r = 0{,}43,
+$$
+
+dans un autre.
+
+Cette variation n'est pas une erreur du générateur. Elle constitue la **fluctuation d'échantillonnage** que les méthodes d'inférence statistique cherchent précisément à prendre en compte.
+
+Plus l'échantillon est grand, plus les caractéristiques observées tendent généralement à se rapprocher de celles de la population.
+
+L'onglet **Vérification** de l'application permet d'observer directement cette relation en comparant les corrélations populationnelles aux corrélations obtenues dans l'échantillon généré.
+
+## La graine aléatoire et la reproductibilité
+
+La simulation repose sur des nombres pseudo-aléatoires. Deux générations réalisées avec les mêmes paramètres ne produiront donc normalement pas exactement les mêmes observations.
+
+Une **graine aléatoire**, ou *seed*, permet de reproduire exactement une simulation.
+
+Si une même graine et les mêmes paramètres sont utilisés, le générateur produira le même jeu de données. Cette propriété est particulièrement utile pour l'enseignement, la préparation d'exercices, la rédaction d'exemples reproductibles ou la comparaison de méthodes d'analyse.
+
+Il faut toutefois savoir que la graine fixe **deux** niveaux de hasard. Lorsque les charges ou les corrélations sont réglées par une plage (par exemple « charges élevées, entre 0,65 et 0,80 »), les valeurs précises de la population sont elles-mêmes tirées au hasard. Une nouvelle graine produit alors une autre population de la même famille, et pas seulement un autre échantillon. Pour tirer de nouvelles personnes dans la même population, l'application offre un bouton distinct, **Nouvel échantillon, même population** (chapitre 3).
+
+## Un générateur, plusieurs usages
+
+Même si le moteur de simulation repose sur un modèle factoriel, les données produites ne sont pas limitées à l'analyse factorielle.
+
+En contrôlant les charges, les corrélations, les distributions, les moyennes et les covariances entre groupes, nous pouvons construire des populations adaptées à plusieurs problèmes multivariés.
+
+Dans les chapitres suivants, nous utiliserons notamment le générateur pour créer des scénarios destinés à :
+
+- l'analyse factorielle exploratoire;
+- l'analyse factorielle confirmatoire;
+- l'analyse factorielle multigroupe;
+- la MANOVA;
+- l'analyse discriminante linéaire;
+- l'analyse discriminante quadratique;
+- la corrélation canonique.
+
+L'objectif ne sera donc pas seulement de demander **« quelles données le générateur peut-il produire ? »**, mais surtout **« quelle population devons-nous construire pour étudier le problème statistique qui nous intéresse ? »**
+
+Cette seconde question guidera toute la partie consacrée aux scénarios de simulation.
+
+::: {.callout-note title="Pour aller plus loin"}
+Ce chapitre présente volontairement le fonctionnement du générateur sans détailler toutes les étapes mathématiques de sa construction. L'appendice technique décrit le mécanisme complet de simulation, depuis la construction des matrices factorielles jusqu'à la génération des observations et au calcul de la population résultant du mélange de plusieurs groupes.
+:::
+
+::: {.callout-note title="🖥️ Dans l'application"}
+- **Configurer → Structure des facteurs** fixe le nombre de facteurs, le nombre d'items par facteur et le type de structure (facteurs corrélés ou bifactorielle).
+- **Configurer → Charges et corrélations** règle $\boldsymbol{\Lambda}$ (charges principales, secondaires, items inversés) et $\boldsymbol{\Phi}$ (corrélation entre facteurs).
+- **Structure populationnelle → Structure des variables** affiche la matrice $\boldsymbol{\Lambda}$ réellement générée, avec les communalités et les unicités.
+- **Structure populationnelle → Structure des facteurs** affiche $\boldsymbol{\Phi}$ et les moyennes latentes de chaque groupe.
+:::
+
+## Laboratoire : retrouver une corrélation à partir du modèle {#sec-labo-1}
+
+Réglez la population fil rouge : **3** facteurs, **Fixe — 5** variables par facteur, corrélation entre facteurs **Fixe — 0,30**, charges principales **Élevées**, charges secondaires **Aucune**, un groupe de **500** personnes, graine **2024**. Générez les données.
+
+1. Dans **Structure des variables**, relevez la charge de `V1` et celle de `V6`. Calculez la corrélation populationnelle attendue entre ces deux items.
+2. Dans **Données → Description globale**, affichez les **valeurs numériques** de la matrice de corrélations et lisez la corrélation observée entre `V1` et `V6`.
+3. Les deux valeurs sont-elles identiques? Faut-il s'en inquiéter?
+
+::: {.callout-tip title="Réponse" collapse="true"}
+1. $\lambda_{11} = `r frm(L1[1, 1])`$ et $\lambda_{62} = `r frm(L1[6, 2])`$. Comme `V1` et `V6` appartiennent à des facteurs différents, $\rho_{16} = `r frm(L1[1, 1])` \times 0{,}30 \times `r frm(L1[6, 2])` = `r frm(fil_S[1, 6])`$.
+2. La corrélation observée vaut $r_{16} = `r frm(fil_R[1, 6])`$.
+3. Non, et ce n'est pas un problème : l'écart de `r fr(fil_R[1, 6] - fil_S[1, 6], 3)` est de la fluctuation d'échantillonnage. Avec $N = 500$, l'erreur-type d'une corrélation proche de 0,18 est d'environ $(1-\rho^2)/\sqrt{N} \approx `r frm((1 - fil_S[1, 6]^2) / sqrt(500))`$ : un écart de cette taille est tout à fait ordinaire. Le chapitre 3 en fait l'objet central.
+:::
+
+::: {.callout-important title="À retenir"}
+- Le générateur ne fixe jamais directement les corrélations entre variables : il fixe $\boldsymbol{\Lambda}$, $\boldsymbol{\Phi}$ et $\boldsymbol{\Theta}$, et $\boldsymbol{\Sigma} = \boldsymbol{\Lambda}\boldsymbol{\Phi}\boldsymbol{\Lambda}^{\mathsf T} + \boldsymbol{\Theta}$ en découle.
+- Chaque variable de la population de référence a une variance de 1, partagée entre communalité et unicité.
+- Un item inversé a des charges négatives; une structure bifactorielle ajoute un facteur général commun à tous les items.
+- Les transformations de réponse (non-invariance, style, Likert, données manquantes) s'appliquent après la structure latente, dans un ordre fixe.
+- Un écart entre corrélation observée et populationnelle est attendu : c'est la fluctuation d'échantillonnage.
+:::
+
+## Erreurs fréquentes
+
+| Erreur | Ce qu'il faut retenir |
+|---|---|
+| Croire que $\boldsymbol{\Phi}$ (corrélations entre facteurs) et la matrice de corrélations observées sont la même chose | $\boldsymbol{\Phi}$ décrit les facteurs latents; les corrélations observées en résultent, combinées aux charges et aux résidus |
+| Penser qu'une charge secondaire nulle isole complètement chaque facteur | Sans charges secondaires, des variables de facteurs différents peuvent tout de même être corrélées si $\boldsymbol{\Phi}$ n'est pas diagonale |
+| Associer communalité et charge principale | La communalité résume l'ensemble des charges d'une variable, y compris ses charges secondaires |
+| Traiter un écart population-échantillon comme un bogue | Il s'agit de fluctuation d'échantillonnage, un phénomène normal et attendu |
+| Oublier que la structure de mesure est commune entre les groupes | Seules les moyennes factorielles et, si activé, les covariances factorielles peuvent varier d'un groupe à l'autre |
+
+## Quiz
+
+::: {.callout-note title="Question 1 — numérique" collapse="true"}
+Avec 15 variables observées, combien de corrélations distinctes existe-t-il dans la matrice de corrélations complète?
+
+**Réponse : 105.** Le nombre de paires distinctes parmi $p$ variables est $\binom{p}{2} = \dfrac{p(p-1)}{2}$, soit $\dfrac{15 \times 14}{2} = 105$.
+:::
+
+::: {.callout-note title="Question 2 — numérique" collapse="true"}
+Une variable standardisée possède une communalité de $0{,}64$. Quelle est sa composante propre (unicité)?
+
+**Réponse : $0{,}36$.** Comme la variance totale d'une variable standardisée vaut 1, la composante propre est $1 - 0{,}64 = 0{,}36$.
+:::
+
+::: {.callout-note title="Question 3 — vrai ou faux" collapse="true"}
+Vrai ou faux : si le générateur est exécuté deux fois avec exactement la même graine aléatoire et les mêmes paramètres, les deux jeux de données produits seront identiques.
+
+**Réponse : Vrai.** La graine aléatoire fixe l'état du générateur de nombres pseudo-aléatoires; à paramètres égaux, la simulation est alors parfaitement reproductible.
+:::
+
+::: {.callout-note title="Question 4 — vrai ou faux" collapse="true"}
+Vrai ou faux : une corrélation observée dans l'échantillon qui diffère de la corrélation populationnelle correspondante indique une erreur dans le générateur.
+
+**Réponse : Faux.** Cet écart est attendu; il s'agit de la fluctuation d'échantillonnage, qui diminue généralement lorsque la taille de l'échantillon augmente, mais qui ne disparaît jamais complètement.
+:::
+
+::: {.callout-note title="Question 5 — diagnostic de scénario" collapse="true"}
+Un chercheur simule deux groupes qui partagent exactement la même matrice de charges $\boldsymbol{\Lambda}$ et la même matrice résiduelle $\boldsymbol{\Theta}$, mais dont les moyennes factorielles diffèrent fortement sur un seul facteur. Que peut-on prédire à propos des variables associées à ce facteur, et à propos de la structure de covariance des deux groupes?
+
+**Réponse :** Les variables principalement associées à ce facteur devraient présenter des moyennes assez différentes entre les deux groupes, puisque la différence de moyenne factorielle se propage à travers les charges. En revanche, comme $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$ sont identiques et qu'aucune différence de covariance factorielle n'est mentionnée, la structure de covariance (variances et corrélations) des deux groupes devrait demeurer semblable. C'est exactement la configuration favorable à un scénario de MANOVA ou d'analyse discriminante linéaire plutôt que quadratique.
+:::

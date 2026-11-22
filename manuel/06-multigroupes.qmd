@@ -1,0 +1,478 @@
+# Générer et comprendre des données multigroupes {#sec-multigroupes}
+
+```{r}
+#| include: false
+source("_common.R")
+mg <- generer(2024, group_sizes = c(300L, 300L, 300L), group_mean_diff = "moderate")
+moy_g <- sapply(c("G1", "G2", "G3"), function(g) colMeans(mg$response[mg$group_membership == g, ]))
+attendu <- mg$loadings %*% t(mg$factor_means)
+mgc <- generer(2024, group_sizes = c(300L, 300L), group_cov_diff = "high")
+```
+
+::: {.callout-tip title="Objectifs d'apprentissage"}
+À la fin de ce chapitre, vous devriez être capable de :
+
+- expliquer pourquoi $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$ demeurent communs entre les groupes dans le générateur, et ce que cela implique pour l'invariance configurationnelle et métrique;
+- distinguer les quatre combinaisons possibles de différences de moyennes et de covariances entre groupes, et les relier aux méthodes correspondantes (CFA multigroupe, MANOVA, LDA, QDA);
+- expliquer pourquoi la matrice de covariance globale d'un mélange de groupes n'est pas une simple moyenne pondérée des covariances de chaque groupe;
+- nommer une limite explicite du générateur pour les scénarios de non-invariance ciblée;
+- concevoir un scénario multigroupe adapté à un objectif d'analyse donné.
+:::
+
+::: {.callout-important title="Idée centrale"}
+Le générateur multigroupe repose sur une seule structure de mesure commune ($\boldsymbol{\Lambda}$, $\boldsymbol{\Theta}$) et permet de faire varier uniquement les moyennes et les covariances factorielles d'un groupe à l'autre. Cette architecture simple suffit à construire des scénarios couvrant la CFA multigroupe, la MANOVA, l'analyse discriminante linéaire et l'analyse discriminante quadratique — quatre méthodes différentes posées sur la même population.
+:::
+
+::: {.callout-warning title="Pièges classiques"}
+- Croire que le générateur peut produire une non-invariance ciblée (une charge différente pour une seule variable dans un seul groupe) : $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$ sont toujours communs à tous les groupes.
+- Calculer la covariance globale comme une simple moyenne pondérée des $\boldsymbol{\Sigma}_g$, en oubliant le terme de séparation des moyennes $(\boldsymbol{\mu}_g-\boldsymbol{\mu})(\boldsymbol{\mu}_g-\boldsymbol{\mu})^{\mathsf T}$.
+- Confondre corrélations et covariances factorielles entre groupes : deux groupes peuvent présenter des corrélations semblables tout en ayant des variances, et donc des covariances, différentes.
+- Assumer que LDA est toujours le bon choix dès qu'il y a plusieurs groupes, sans vérifier si les groupes simulés partagent effectivement la même structure de covariance.
+- Oublier que le poids $w_g$ d'un groupe dans la population globale dépend de sa taille relative $n_g/N$, pas seulement du fait qu'il existe.
+:::
+
+De nombreuses méthodes multivariées s'intéressent à plusieurs populations plutôt qu'à une seule. On peut vouloir comparer des groupes sur plusieurs variables simultanément, déterminer si une structure factorielle est comparable d'un groupe à l'autre ou encore utiliser un ensemble de variables pour prédire l'appartenance à un groupe. Malgré leurs objectifs différents, la CFA multigroupe, la MANOVA et l'analyse discriminante partagent donc un même besoin : disposer de plusieurs groupes dont les propriétés multivariées peuvent être comparées.
+
+Le générateur permet de construire ce type de données en conservant une structure de mesure commune tout en faisant varier certaines propriétés des facteurs latents. Les groupes peuvent différer par leurs moyennes factorielles et, si on le souhaite, par leurs variances et leurs covariances factorielles. Cette architecture permet de créer plusieurs scénarios classiques sans devoir spécifier individuellement toutes les moyennes, variances et covariances des variables observées.
+
+## Une même structure de mesure pour plusieurs populations
+
+Dans le cas d'un seul groupe, le modèle de mesure s'écrit :
+
+$$
+\mathbf{X}
+=
+\boldsymbol{\Lambda}\mathbf{F}
++
+\boldsymbol{\varepsilon}.
+$$
+
+Avec plusieurs groupes, nous pouvons écrire le même modèle pour chaque groupe $g$ :
+
+$$
+\mathbf{X}_g
+=
+\boldsymbol{\Lambda}\mathbf{F}_g
++
+\boldsymbol{\varepsilon}_g.
+$$
+
+L'indice $g$ indique que les observations appartiennent à des populations différentes. Dans le générateur actuel, la matrice des charges $\boldsymbol{\Lambda}$ demeure cependant commune aux groupes. Une variable qui constitue un indicateur du premier facteur dans `G1` conserve donc la même structure de mesure dans `G2`, `G3` et les autres groupes.
+
+Cette propriété est fondamentale. Les groupes ne sont pas produits comme des ensembles complètement indépendants de variables arbitrairement corrélées. Ils partagent un même modèle de mesure, auquel viennent s'ajouter des différences contrôlées dans la distribution des facteurs.
+
+## Générer un jeu approprié avec MultvarGen
+
+Pour une première CFA multigroupe, choisissez **3** facteurs, **Fixe — 5** variables par facteur, des charges principales **élevées (0,65–0,80)**, aucune charge secondaire et une corrélation factorielle **fixe de 0,30**. Dans **Groupes**, créez **3** groupes de **300** personnes, sélectionnez des différences de moyennes **modérées** et des covariances **identiques**. Gardez l'option d'**invariance de mesure** à son réglage sans violation, avec des réponses continues et une distribution normale.
+
+L'application utilise `G1` comme référence; avec cette configuration, `G2` est déplacé sur le premier facteur et `G3` sur le deuxième. Vérifiez les moyennes factorielles et les covariances par groupe dans **Structure populationnelle**, puis exportez les données individuelles. Ajustez d'abord le même modèle de mesure dans tous les groupes, avant de comparer les moyennes latentes. Vous saurez ainsi que les différences estimées proviennent des populations générées et non d'une modification intentionnelle de la mesure.
+
+## Les tailles de groupes
+
+Chaque groupe possède son propre effectif. Avec $G$ groupes, l'effectif total est :
+
+$$
+N
+=
+\sum_{g=1}^{G} n_g.
+$$
+
+Les groupes peuvent être équilibrés, par exemple trois groupes de 200 observations, ou déséquilibrés, par exemple des groupes de 100, 200 et 300 observations. Cette possibilité est utile parce que l'équilibre des tailles de groupes peut lui-même influencer le comportement de certaines méthodes statistiques.
+
+Il faut cependant distinguer la taille d'un groupe de ses propriétés populationnelles. Un groupe plus grand ne possède pas pour autant une moyenne ou une covariance différente. Il fournit simplement davantage d'observations provenant de cette population. Dans les statistiques calculées sur l'ensemble des données, il contribue toutefois davantage aux valeurs globales en raison de son poids plus important.
+
+## Le groupe de référence
+
+Le groupe `G1` joue un rôle particulier dans le générateur. Il constitue la population de référence à partir de laquelle les différences entre groupes sont construites. Ses moyennes factorielles servent de point de comparaison et sa structure factorielle fournit la structure de référence lorsque des variations de covariance sont demandées.
+
+Ce choix simplifie l'interprétation des scénarios. Plutôt que de considérer plusieurs populations sans point d'ancrage, on peut demander comment `G2`, `G3` ou les autres groupes diffèrent de `G1`. Cette logique est également familière dans plusieurs modèles statistiques où un groupe sert de catégorie ou de condition de référence.
+
+## Différences de moyennes factorielles
+
+Le premier type de différence que le générateur peut introduire concerne les moyennes des facteurs latents. Pour le groupe $g$, nous pouvons représenter ces moyennes par le vecteur :
+
+$$
+\boldsymbol{\mu}_{F,g}
+=
+E(\mathbf{F}_g).
+$$
+
+Le groupe de référence possède des moyennes factorielles nulles. Lorsque des différences sont demandées, certains autres groupes sont déplacés sur un ou plusieurs facteurs. L'intensité de ces déplacements dépend du niveau choisi dans l'application.
+
+Ces différences latentes se répercutent sur les variables observées. Puisque :
+
+$$
+E(\mathbf{X}_g)
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\mu}_{F,g},
+$$
+
+un groupe ayant une moyenne plus élevée sur un facteur tend également à avoir des moyennes plus élevées sur les indicateurs fortement associés à ce facteur. La matrice des charges détermine ainsi comment une différence latente se manifeste dans l'espace des variables observées.
+
+## Voir une différence latente dans les données
+
+Supposons qu'un facteur soit principalement mesuré par cinq variables. Si `G2` possède une moyenne factorielle supérieure à celle de `G1` sur cette dimension, les cinq indicateurs devraient généralement présenter des différences de moyennes allant dans la même direction. Ces différences ne seront cependant pas toutes identiques, puisque leur amplitude dépend notamment des charges factorielles.
+
+Cette propriété permet de construire des différences multivariées cohérentes. Au lieu d'ajouter arbitrairement une constante à plusieurs variables, le générateur déplace la population au niveau latent et laisse le modèle de mesure transmettre cette différence aux indicateurs. Les différences entre groupes conservent ainsi un lien avec la structure factorielle de la population.
+
+![Les moyennes latentes de trois groupes avec des différences modérées (graine 2024) : `G2` est déplacé de 0,50 sur `F1`, `G3` de 0,50 sur `F2`.](images/cap-moyennes-latentes.png){#fig-cap-moyennes-latentes .capture width="92%"}
+
+![Les moyennes observées des mêmes groupes (**Données → Description par groupe**) : les items de `F1` (V1 à V5) sont plus élevés dans `G2`, ceux de `F2` (V6 à V10) dans `G3`.](images/cap-moyennes-groupes.png){#fig-cap-moyennes-groupes .capture width="100%"}
+
+## Différences de covariance factorielle
+
+Le deuxième type de différence concerne la dispersion et les relations entre les facteurs. Chaque groupe peut être caractérisé par une matrice de covariance factorielle :
+
+$$
+\boldsymbol{\Phi}_g
+=
+\operatorname{Var}(\mathbf{F}_g).
+$$
+
+Lorsque l'option de covariances égales est choisie, cette matrice est commune aux groupes. Les facteurs possèdent alors les mêmes variances et les mêmes relations dans toutes les populations. Lorsque des variations modérées ou fortes sont demandées, certaines variances factorielles et certaines relations entre facteurs sont modifiées de manière contrôlée.
+
+La matrice de covariance des variables observées devient alors, pour chaque groupe :
+
+$$
+\boldsymbol{\Sigma}_g
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}_g
+\boldsymbol{\Lambda}^{\mathsf T}
++
+\boldsymbol{\Theta}.
+$$
+
+Même si $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$ demeurent communes, une modification de $\boldsymbol{\Phi}_g$ suffit donc à produire des matrices de covariance observées différentes entre les groupes.
+
+Concrètement, avec des variations **fortes**, `G2` voit les corrélations entre ses facteurs déplacées de ±0,40 (puis limitées à l'intervalle de −0,80 à 0,80) et l'écart-type de son premier facteur porté à 1,40; avec des variations **modérées**, ces modifications sont de ±0,20 et l'écart-type passe à 1,20. Les groupes suivants reçoivent des modifications sur d'autres facteurs, en alternant le sens. Dans une structure bifactorielle, seules les variances changent : les facteurs restent orthogonaux dans tous les groupes.
+
+![La matrice de covariances factorielles de `G2` lorsque les covariances varient fortement entre deux groupes (graine 2024).](images/cap-covariances-g2.png){#fig-cap-covariances-g2 .capture width="92%"}
+
+Une conséquence mérite d'être notée : lorsque la variance d'un facteur augmente dans un groupe, la communalité de ses indicateurs augmente aussi dans ce groupe, puisque $\boldsymbol{\Theta}$ ne change pas. Dans `G2`, la communalité de `V1` passe ainsi de `r fr(mgc$communalities[1], 3)` à `r h2 <- diag(mgc$loadings %*% mgc$group_factor_covariances$G2 %*% t(mgc$loadings)); fr(h2[1] / (h2[1] + mgc$uniquenesses[1]), 3)`. Le sélecteur de groupe de **Structure populationnelle → Structure des variables** affiche ces communalités propres à chaque groupe.
+
+## Corrélations et covariances ne disent pas exactement la même chose
+
+La matrice de corrélations factorielles décrit les relations entre facteurs après standardisation de leurs variances. La matrice de covariance conserve, elle, l'information sur les variances. Lorsque tous les facteurs ont une variance égale à 1, les valeurs de corrélation et de covariance peuvent être identiques. Dès que les variances diffèrent, les deux matrices ne représentent plus la même information.
+
+Cette distinction devient particulièrement importante dans les scénarios multigroupes. Deux groupes peuvent présenter des relations corrélationnelles relativement semblables tout en différant par la dispersion de certains facteurs. L'examen des covariances permet alors de voir une différence que la seule matrice de corrélations pourrait rendre moins évidente.
+
+## Quatre situations fondamentales
+
+Les contrôles des moyennes et des covariances permettent de distinguer quatre situations conceptuelles particulièrement utiles.
+
+| Moyennes | Covariances | Interprétation |
+|---|---|---|
+| Égales | Égales | Groupes provenant de populations multivariées semblables |
+| Différentes | Égales | Groupes déplacés dans l'espace multivarié, avec même structure de dispersion |
+| Égales | Différentes | Même centre, mais structures de dispersion différentes |
+| Différentes | Différentes | Groupes différant à la fois par leur position et leur structure de dispersion |
+
+Ces quatre situations serviront de fil conducteur dans plusieurs chapitres. La MANOVA s'intéressera principalement aux différences de position multivariée, tandis que la distinction entre covariances égales et différentes deviendra particulièrement importante pour la classification par LDA ou QDA.
+
+## La CFA multigroupe
+
+La CFA multigroupe cherche à déterminer dans quelle mesure un modèle de mesure peut être considéré comme comparable entre plusieurs populations. Plutôt que d'ajuster séparément un modèle dans chaque groupe sans relation entre eux, on estime simultanément plusieurs modèles et on impose progressivement certaines contraintes d'égalité.
+
+Le générateur offre une situation particulièrement intéressante pour étudier cette logique parce que nous savons à l'avance que la structure de mesure a été construite de manière commune. Les différences observées entre les estimations de charges dans les échantillons ne signifient donc pas nécessairement que les charges populationnelles diffèrent. Elles peuvent simplement résulter de la fluctuation d'échantillonnage.
+
+## L'invariance configurationnelle
+
+Le premier niveau habituellement considéré est l'**invariance configurationnelle**. Elle suppose essentiellement que la même organisation factorielle s'applique dans tous les groupes : même nombre de facteurs et mêmes indicateurs associés aux mêmes facteurs.
+
+Le générateur satisfait naturellement cette condition. Une variable associée au facteur $F_1$ dans `G1` conserve la même structure dans les autres groupes. Les groupes partagent donc le même patron général de charges.
+
+Un modèle CFA multigroupe qui spécifie cette même structure dans chaque groupe correspond ainsi directement au mécanisme utilisé pour générer les données.
+
+## L'invariance métrique
+
+L'**invariance métrique**, parfois appelée invariance faible, ajoute une contrainte d'égalité sur les charges factorielles :
+
+$$
+\boldsymbol{\Lambda}_1
+=
+\boldsymbol{\Lambda}_2
+=
+\cdots
+=
+\boldsymbol{\Lambda}_G.
+$$
+
+Cette condition est également inscrite dans le générateur actuel. La même matrice $\boldsymbol{\Lambda}$ est utilisée pour tous les groupes. Les charges populationnelles sont donc véritablement égales, même si les charges estimées séparément dans les échantillons ne le seront presque jamais exactement.
+
+Ce scénario permet de comprendre la logique d'un test d'invariance métrique. Lorsque l'on impose l'égalité des charges dans le modèle CFA multigroupe, on impose une contrainte qui est effectivement vraie dans la population générée.
+
+## Au-delà de l'invariance métrique
+
+Les analyses d'invariance peuvent aller plus loin en imposant des contraintes sur les intercepts, les seuils ordinaux, les variances résiduelles ou d'autres paramètres. On parle notamment d'invariance scalaire lorsque les intercepts — ou les seuils dans le cas ordinal — sont comparables entre groupes, et d'invariance stricte lorsque les variances résiduelles sont également considérées.
+
+Par défaut, le générateur crée une condition scalaire de référence : les intercepts continus et les seuils Likert sont identiques entre les groupes. Il peut aussi introduire une violation ciblée, toujours pour un item de `G2` :
+
+- pour les données continues, un **DIF d'intercept** de $0{,}60$;
+- pour les données Likert, un **DIF de seuils** de $0{,}60$ appliqué à tous les seuils de l'item.
+
+Dans les deux cas, les charges et les facteurs latents ne sont pas modifiés. La différence observée est donc due au fonctionnement de l'indicateur, non à une différence réelle sur le construit.
+
+::: {.callout-note title="La bonne question à poser"}
+Le générateur est particulièrement bien adapté pour montrer la différence entre une comparaison latente valide et une différence observée contaminée par un item non invariant. Il n'est pas conçu pour simuler arbitrairement toutes les formes possibles de non-invariance de mesure.
+:::
+
+## Ce que le générateur ne permet pas de faire
+
+Il n'est pas possible, par exemple, de demander que la charge de `V3` soit $0{,}75$ dans `G1` et $0{,}45$ dans `G2`, tout en laissant les autres charges identiques. De même, l'interface ne permet pas de choisir librement l'item, le groupe, l'amplitude ou le sens d'une non-invariance, ni d'imposer une variance résiduelle différente à un indicateur particulier dans un seul groupe.
+
+Ces scénarios de non-invariance paramétrés sont très utiles en recherche méthodologique, mais ils nécessitent un générateur SEM offrant un contrôle paramètre par paramètre. L'option proposée ici est volontairement limitée afin de garder une relation transparente entre le contrôle choisi et son effet.
+
+Cette limite n'empêche pas l'utilisation du générateur pour comprendre la CFA multigroupe. Elle délimite simplement le type de questions auxquelles les simulations peuvent répondre correctement.
+
+## Comparer les estimations entre groupes
+
+Une expérience instructive consiste à générer deux ou trois groupes partageant exactement la même structure de mesure, puis à effectuer une CFA séparément dans chacun d'eux. Les charges estimées ne seront pas identiques, même si les charges populationnelles le sont.
+
+Avec de grands groupes, ces différences devraient généralement être modestes. Avec de petits groupes, elles peuvent devenir beaucoup plus visibles. L'expérience montre ainsi pourquoi l'examen visuel de coefficients légèrement différents ne suffit pas à conclure que la mesure fonctionne différemment entre populations.
+
+La CFA multigroupe fournit précisément un cadre permettant d'évaluer ces contraintes d'égalité plutôt que de comparer naïvement des estimations obtenues séparément.
+
+## Moyennes factorielles et CFA multigroupe
+
+Une structure de mesure commune ne signifie pas que les groupes doivent avoir les mêmes moyennes sur les facteurs. Au contraire, l'une des raisons de rechercher l'invariance de mesure est précisément de rendre les comparaisons de construits latents plus défendables.
+
+Le générateur illustre très bien cette distinction. Deux groupes peuvent partager exactement les mêmes charges factorielles tout en possédant des moyennes latentes différentes. L'instrument fonctionne alors selon la même structure de mesure, mais les populations ne se situent pas au même endroit sur la dimension mesurée.
+
+On peut donc générer des groupes présentant une structure de mesure commune, ajuster un modèle CFA multigroupe, puis examiner comment les différences latentes se manifestent dans les moyennes des variables observées.
+
+## De la CFA multigroupe à la MANOVA
+
+Les mêmes données peuvent être considérées sous une perspective complètement différente. Si l'on cesse de s'intéresser aux facteurs latents et que l'on examine directement les variables observées, les différences de moyennes entre groupes deviennent un problème classique de comparaison multivariée.
+
+Supposons que `G2` possède une moyenne supérieure à `G1` sur un facteur. Les indicateurs de ce facteur auront eux aussi tendance à présenter des moyennes différentes. Une MANOVA peut alors demander si, considérées simultanément, les variables observées distinguent les groupes.
+
+Le modèle factoriel sert donc ici uniquement à fabriquer une différence multivariée cohérente. Il n'est pas nécessaire d'effectuer une analyse factorielle pour utiliser les données en MANOVA.
+
+Cette idée constitue l'un des principes importants du générateur : **une population produite par un modèle factoriel peut servir à étudier une méthode qui n'est elle-même pas factorielle**.
+
+## De la différence de moyennes à la classification
+
+Une autre perspective consiste non plus à tester si les groupes diffèrent, mais à essayer de prédire le groupe auquel appartient une observation.
+
+Si les groupes possèdent exactement les mêmes moyennes et les mêmes covariances, leurs distributions multivariées se chevauchent fortement et la classification devrait être difficile. À mesure que les moyennes se séparent, les observations deviennent plus faciles à attribuer à leur population d'origine.
+
+Les différences de moyennes contrôlées dans le générateur deviennent donc un moyen de régler indirectement le degré de séparation entre les groupes. Une faible différence crée un problème de classification difficile; une différence plus importante rend les populations plus distinctes.
+
+## Covariances égales et LDA
+
+L'analyse discriminante linéaire, ou LDA, repose classiquement sur l'hypothèse que les groupes possèdent une matrice de covariance commune :
+
+$$
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2
+=
+\cdots
+=
+\boldsymbol{\Sigma}_G.
+$$
+
+Le générateur permet de créer une situation proche de cette logique en conservant une même structure de covariance factorielle dans tous les groupes. Puisque la structure de mesure est également commune, les matrices de covariance populationnelles des variables observées sont alors communes.
+
+Si les moyennes diffèrent, les groupes occupent des positions différentes dans l'espace multivarié tout en conservant une forme de dispersion semblable. C'est précisément le type de population pour lequel une frontière discriminante linéaire est naturellement adaptée.
+
+## Covariances différentes et QDA
+
+L'analyse discriminante quadratique, ou QDA, permet au contraire aux groupes de posséder des matrices de covariance différentes :
+
+$$
+\boldsymbol{\Sigma}_1
+\neq
+\boldsymbol{\Sigma}_2
+\neq
+\cdots
+\neq
+\boldsymbol{\Sigma}_G.
+$$
+
+Lorsque le générateur introduit des différences dans les variances ou les covariances factorielles, ces modifications se transmettent aux matrices de covariance des variables observées. Les groupes peuvent alors différer non seulement par leur centre, mais aussi par leur forme et leur dispersion dans l'espace multivarié.
+
+Cette situation prépare naturellement une comparaison entre LDA et QDA. Le même principe de génération permet de créer une population conforme à l'hypothèse d'une covariance commune, puis une autre dans laquelle cette hypothèse est volontairement violée.
+
+## Un premier scénario : groupes équivalents
+
+Commencez par deux groupes de même taille, sans différence de moyennes et avec des covariances égales. Conservez une structure factorielle relativement simple et générez un échantillon suffisamment grand.
+
+Les groupes proviennent alors de populations multivariées très semblables. Les différences observées dans les moyennes ou les matrices de covariance sont essentiellement dues à la fluctuation d'échantillonnage.
+
+Ce scénario fournit une condition de référence. Une MANOVA ne devrait pas découvrir systématiquement de différence entre les groupes et une méthode de classification ne devrait pas obtenir une performance substantiellement supérieure à ce que permet l'information disponible par hasard.
+
+## Un deuxième scénario : moyennes différentes, covariances égales
+
+Conservez la même configuration, mais introduisez maintenant une différence modérée de moyennes factorielles. Les groupes partagent toujours la même structure de covariance, mais leurs centres sont déplacés dans l'espace multivarié.
+
+Ce scénario est particulièrement polyvalent. Il peut servir à une CFA multigroupe avec moyennes latentes différentes, à une MANOVA portant sur les variables observées ou à une analyse discriminante linéaire.
+
+L'intérêt est de pouvoir analyser exactement le même jeu de données sous trois perspectives : mesure latente, comparaison multivariée et classification.
+
+## Un troisième scénario : moyennes et covariances différentes
+
+Introduisez ensuite à la fois des différences de moyennes et des variations de covariance. Les groupes se distinguent maintenant par leur position et par leur dispersion.
+
+Une MANOVA peut toujours détecter des différences de moyennes, mais l'hypothèse d'homogénéité des matrices de covariance devient moins plausible. Du point de vue de la classification, la situation devient particulièrement intéressante parce qu'une méthode autorisant des matrices propres à chaque groupe, comme QDA, correspond mieux au mécanisme générateur qu'une méthode imposant une covariance commune.
+
+Ce scénario montre qu'une même modification de la population peut avoir des conséquences différentes selon la méthode statistique utilisée.
+
+## Un quatrième scénario : covariances différentes sans différence de moyennes
+
+Une situation moins intuitive consiste à conserver les mêmes moyennes tout en modifiant les covariances. Les centres des groupes coïncident alors, mais leur dispersion et leurs relations internes diffèrent.
+
+Une méthode portant exclusivement sur les différences de moyennes ne cible pas directement ce qui distingue ces populations. Une méthode de classification sensible à la forme des distributions peut néanmoins exploiter une partie de cette information.
+
+Ce scénario est particulièrement utile pour montrer que deux populations multivariées peuvent être différentes même lorsqu'elles possèdent exactement le même vecteur de moyennes.
+
+## Examiner les données globalement et par groupe
+
+L'onglet **Description globale** résume l'ensemble des observations comme si elles formaient un seul échantillon. Cette vue reste utile, mais elle ne suffit plus lorsque plusieurs populations sont présentes.
+
+Le sous-onglet **Description par groupe** permet d'examiner séparément les moyennes, les corrélations et les covariances. Cette comparaison doit devenir un réflexe dans les simulations multigroupes. Elle permet de distinguer ce qui caractérise réellement chaque population de ce qui apparaît seulement lorsque les groupes sont réunis.
+
+L'onglet **Structure populationnelle** fournit ensuite la référence exacte : les moyennes factorielles et les matrices factorielles populationnelles peuvent être comparées aux caractéristiques observées dans chaque groupe.
+
+## Pourquoi la matrice globale peut changer
+
+Lorsque plusieurs groupes sont réunis, la covariance globale dépend à la fois des covariances internes et des différences entre leurs moyennes. Elle peut être écrite :
+
+$$
+\boldsymbol{\Sigma}
+=
+\sum_{g=1}^{G}
+w_g
+\left[
+\boldsymbol{\Sigma}_g
++
+(\boldsymbol{\mu}_g-\boldsymbol{\mu})
+(\boldsymbol{\mu}_g-\boldsymbol{\mu})^{\mathsf T}
+\right],
+$$
+
+où :
+
+$$
+w_g
+=
+\frac{n_g}{N}.
+$$
+
+La matrice calculée sur toutes les observations n'est donc pas une simple moyenne des matrices de groupes. Les différences entre les centres des populations contribuent elles aussi à la covariance globale.
+
+Cette propriété explique pourquoi l'ajout de différences de moyennes peut modifier la matrice de corrélations globale même lorsque les matrices de covariance à l'intérieur des groupes sont identiques.
+
+La @fig-melange le montre pour deux groupes de même taille dont le second est déplacé sur `F1`. Pour deux items de `F1`, la séparation des groupes ajoute de la covariance : la corrélation globale dépasse la corrélation intragroupe. Pour un item de `F1` et un item de `F2`, c'est l'inverse : la séparation augmente la variance de l'item de `F1` sans rien ajouter à la covariance entre les deux, et la corrélation globale diminue.
+
+```{r}
+#| label: fig-melange
+#| fig-cap: "Corrélation globale (groupes réunis) et corrélation à l'intérieur de chaque groupe, pour deux groupes de même taille dont le second est déplacé de δ écarts-types sur F1 (charges de 0,75, corrélation entre facteurs de 0,30). Les traits verticaux marquent les niveaux faible, modéré et fort de l'application."
+#| fig-height: 3.3
+deltas <- seq(0, 2, by = 0.05); l <- 0.75; phi <- 0.30; w <- 0.25
+mel <- rbind(
+  data.frame(d = deltas, paire = "Deux items de F1", type = "Globale",
+             r = l^2 * (1 + w * deltas^2) / (1 + w * l^2 * deltas^2)),
+  data.frame(d = deltas, paire = "Deux items de F1", type = "Intragroupe", r = l^2),
+  data.frame(d = deltas, paire = "Un item de F1, un item de F2", type = "Globale",
+             r = l^2 * phi / sqrt(1 + w * l^2 * deltas^2)),
+  data.frame(d = deltas, paire = "Un item de F1, un item de F2", type = "Intragroupe", r = l^2 * phi))
+ggplot(mel, aes(d, r, colour = paire, linetype = type)) + geom_line(linewidth = 1.05) +
+  geom_vline(xintercept = c(0.25, 0.5, 0.8), colour = "grey70", linetype = "dotted") +
+  scale_colour_manual(values = c(pal$bleu, pal$orange), name = NULL) +
+  scale_linetype_manual(values = c(Globale = "solid", Intragroupe = "dashed"), name = NULL) +
+  scale_x_continuous(labels = axe_fr) + scale_y_continuous(labels = axe_fr) +
+  labs(x = "Déplacement de G2 sur F1 (δ)", y = "Corrélation") +
+  guides(colour = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2))
+```
+
+Aux niveaux proposés par l'application (δ ≤ 0,80), l'effet reste modeste; il devient marqué pour des séparations plus grandes. C'est pourquoi l'onglet **Vérification** compare toujours l'échantillon à la population **mélangée**, et non à la population d'un groupe.
+
+## Une population, plusieurs questions statistiques
+
+L'un des avantages les plus intéressants des données multigroupes est qu'un même jeu de données peut répondre à plusieurs questions.
+
+Avec une population comprenant trois groupes, on peut demander si le modèle de mesure est comparable entre eux, si leurs vecteurs de moyennes observées diffèrent, si l'appartenance au groupe peut être prédite à partir des variables ou encore si une méthode supposant des covariances égales est appropriée.
+
+Ces questions correspondent respectivement à la CFA multigroupe, à la MANOVA et à différentes formes d'analyse discriminante. Elles ne nécessitent pourtant pas trois générateurs différents. Elles représentent trois façons d'interroger la même structure multivariée.
+
+::: {.callout-tip title="Un excellent exercice intégré"}
+Générez trois groupes avec une structure de mesure commune, des différences modérées de moyennes et des covariances égales. Utilisez ensuite exactement les mêmes données pour effectuer une CFA multigroupe, une MANOVA et une LDA. Les trois analyses répondent à des questions différentes sur la même population.
+:::
+
+## Ce que les données multigroupes nous apprennent
+
+Les différences entre groupes ne se résument pas à comparer quelques moyennes séparément. Deux populations multivariées peuvent différer par leur position, leur dispersion, leurs relations internes ou plusieurs de ces caractéristiques simultanément.
+
+Le générateur permet de contrôler ces dimensions à partir d'une structure factorielle commune. Les différences de moyennes latentes déplacent les groupes dans l'espace des variables observées, tandis que les différences de covariance factorielle modifient leur structure de dispersion. La même architecture permet ainsi de produire des populations adaptées à plusieurs méthodes multivariées classiques.
+
+Cette perspective est essentielle pour la suite du manuel. Nous ne considérerons plus nécessairement les facteurs comme les objets à analyser. Ils pourront simplement servir de **mécanisme de construction d'une population multivariée possédant les propriétés dont nous avons besoin**.
+
+Le prochain chapitre exploitera précisément cette idée pour construire des scénarios destinés à la **MANOVA**. Nous verrons comment les différences de moyennes factorielles produisent des différences multivariées entre les groupes, comment la corrélation entre les variables intervient dans le problème et comment créer des situations allant de l'absence d'effet à une séparation multivariée importante.
+
+::: {.callout-note title="🖥️ Dans l'application"}
+- **Configurer → Groupes** : nombre et taille des groupes, différences de moyennes latentes, covariances entre groupes et invariance de mesure.
+- **Structure populationnelle → Structure des facteurs** : moyennes latentes de chaque groupe et matrices de corrélations ou de covariances factorielles du groupe choisi.
+- **Structure populationnelle → Structure des variables** : sélecteur de groupe pour les communalités propres à chaque groupe.
+- **Données → Description par groupe** : moyennes observées par groupe et matrice de corrélations ou de covariances d'un groupe.
+:::
+
+## Laboratoire : suivre une différence latente jusqu'aux items {#sec-labo-6}
+
+Générez la population fil rouge avec **3** groupes de **300** personnes, des différences de moyennes latentes **modérées**, des covariances **identiques** et la graine **2024**.
+
+1. Dans **Structure des facteurs**, quel groupe est déplacé sur quel facteur?
+2. Quelle moyenne populationnelle attendez-vous pour `V1` dans `G2`? pour `V6` dans `G3`?
+3. Comparez ces valeurs aux moyennes observées dans **Description par groupe**.
+
+::: {.callout-tip title="Réponse" collapse="true"}
+1. `G2` a une moyenne latente de 0,50 sur `F1`; `G3` a une moyenne de 0,50 sur `F2`; `G1` est la référence (0 partout).
+2. Puisque $E(\mathbf{X}_g) = \boldsymbol{\Lambda}\boldsymbol{\mu}_{F,g}$ : pour `V1` dans `G2`, $`r frm(mg$loadings[1, 1])` \times 0{,}50 = `r frm(attendu[1, 2])`$; pour `V6` dans `G3`, $`r frm(mg$loadings[6, 2])` \times 0{,}50 = `r frm(attendu[6, 3])`$. Tous les autres items de ces groupes ont une moyenne attendue de 0 sur les facteurs non déplacés.
+3. Les moyennes observées valent `r fr(moy_g[1, 2], 3)` pour `V1` dans `G2` et `r fr(moy_g[6, 3], 3)` pour `V6` dans `G3`. L'écart avec la valeur attendue est de l'ordre de l'erreur-type d'une moyenne de 300 personnes, $1/\sqrt{300} \approx 0{,}058$ : de la fluctuation d'échantillonnage. Dans `G1`, la moyenne observée de `V1` vaut `r fr(moy_g[1, 1], 3)` pour une valeur attendue de 0.
+:::
+
+::: {.callout-important title="À retenir"}
+- Les groupes partagent $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$; seules leurs distributions latentes diffèrent, sauf DIF explicitement demandé.
+- Une différence de moyenne latente se transmet aux items par les charges : $E(\mathbf{X}_g) = \boldsymbol{\Lambda}\boldsymbol{\mu}_{F,g}$.
+- Une différence de covariance latente donne des $\boldsymbol{\Sigma}_g$ différentes et modifie aussi les communalités propres à chaque groupe.
+- La covariance globale d'un mélange ajoute la variation entre les centres des groupes.
+- Les quatre combinaisons moyennes/covariances préparent la CFA multigroupe, la MANOVA, la LDA et la QDA.
+:::
+
+## Erreurs fréquentes
+
+| Erreur | Ce qu'il faut retenir |
+|---|---|
+| Croire qu'une charge peut être modifiée dans un seul groupe | $\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$ sont toujours communs à tous les groupes; seules les moyennes et, si activé, les covariances factorielles peuvent varier |
+| Assimiler la covariance globale à une moyenne des $\boldsymbol{\Sigma}_g$ | Il faut ajouter le terme $(\boldsymbol{\mu}_g-\boldsymbol{\mu})(\boldsymbol{\mu}_g-\boldsymbol{\mu})^{\mathsf T}$ causé par la séparation des moyennes |
+| Choisir LDA par réflexe dès qu'il y a plusieurs groupes | LDA suppose des covariances égales entre groupes; vérifier d'abord le paramètre de covariance utilisé pour générer les données |
+| Croire que le générateur peut violer n'importe quel niveau d'invariance | Charges et unicités sont toujours communes; seule une violation scalaire ciblée (DIF d'un item de `G2`) est possible |
+| Négliger l'onglet Description par groupe dans une simulation multigroupe | Les statistiques globales peuvent masquer des différences ou des similitudes propres à chaque groupe |
+
+## Quiz
+
+::: {.callout-note title="Question 1 — numérique" collapse="true"}
+Une simulation comporte trois groupes de tailles $n_1=100$, $n_2=150$ et $n_3=250$. Quel est le poids $w_2$ du groupe `G2` dans le calcul de la population globale?
+
+**Réponse : $0{,}30$.** $N = 100+150+250 = 500$, donc $w_2 = n_2/N = 150/500 = 0{,}30$.
+:::
+
+::: {.callout-note title="Question 2 — vrai ou faux" collapse="true"}
+Vrai ou faux : si deux groupes ont exactement les mêmes matrices de covariance factorielle $\boldsymbol{\Phi}_g$ et exactement les mêmes moyennes factorielles, la matrice de covariance globale du mélange est identique à la matrice de covariance de chacun des groupes pris séparément.
+
+**Réponse : Vrai.** Sans séparation de moyennes, le terme $(\boldsymbol{\mu}_g-\boldsymbol{\mu})(\boldsymbol{\mu}_g-\boldsymbol{\mu})^{\mathsf T}$ s'annule pour chaque groupe, et comme les $\boldsymbol{\Sigma}_g$ sont déjà identiques entre eux, la covariance globale leur est égale.
+:::
+
+::: {.callout-note title="Question 3 — vrai ou faux" collapse="true"}
+Vrai ou faux : le générateur permet de créer un scénario où `G1` et `G2` partagent la même structure factorielle, mais où la variance résiduelle de la variable `V5` est deux fois plus grande dans `G2` que dans `G1`.
+
+**Réponse : Faux.** $\boldsymbol{\Theta}$ est toujours commune à tous les groupes; il n'est pas possible d'imposer une variance résiduelle différente à une variable particulière dans un seul groupe.
+:::
+
+::: {.callout-note title="Question 4 — diagnostic de scénario" collapse="true"}
+Vous générez trois groupes de même taille. Les moyennes factorielles sont identiques entre les groupes, mais les covariances factorielles diffèrent fortement (option « Variations fortes »). Quelle méthode parmi CFA multigroupe (invariance métrique), MANOVA, LDA et QDA est la mieux adaptée à cette population, et pourquoi les autres le sont moins?
+
+**Réponse :** QDA est la mieux adaptée : les groupes se chevauchent sur leurs centres (mêmes moyennes) mais diffèrent par leur forme et leur dispersion, exactement la situation où une frontière quadratique — qui autorise des covariances propres à chaque groupe — surpasse une frontière linéaire. LDA serait mal adapté puisqu'il suppose des covariances communes, ce qui est ici explicitement violé. Une MANOVA standard sur les moyennes ne détecterait probablement aucune différence significative, puisque les centres des groupes coïncident. Un modèle d'invariance métrique en CFA multigroupe resterait valide sur le plan des charges ($\boldsymbol{\Lambda}$ demeure commune), mais ne capturerait pas cette différence de covariance factorielle, qui se situe à un autre niveau du modèle.
+:::

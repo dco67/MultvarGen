@@ -1,0 +1,241 @@
+# Glossaire {.unnumbered}
+
+**Alpha de Cronbach (α)**
+: Coefficient de fidélité calculé à partir des variances et covariances des items, $\alpha = \frac{p}{p-1}\left(1-\sum_j\sigma_j^2/\sigma_T^2\right)$. Égal à ω lorsque les items sont tau-équivalents; il sous-estime la fidélité d'items congénériques.
+
+**Analyse discriminante linéaire (LDA)**
+: Méthode de classification qui suppose que les groupes suivent une distribution multivariée normale et partagent une matrice de covariance commune, $\boldsymbol{\Sigma}_1=\cdots=\boldsymbol{\Sigma}_G$. Sous ces conditions, la frontière séparant deux groupes est linéaire.
+
+**Analyse discriminante quadratique (QDA)**
+: Méthode de classification qui ne suppose pas de covariance commune entre les groupes; chaque groupe possède sa propre matrice $\boldsymbol{\Sigma}_g$. La frontière de décision qui en résulte peut être courbe, au prix d'un plus grand nombre de paramètres à estimer.
+
+**Analyse factorielle confirmatoire (AFC, CFA)**
+: Méthode qui spécifie à l'avance une structure de mesure — quelles variables sont censées mesurer quels facteurs — et estime les paramètres du modèle sous cette structure imposée, contrairement à l'AFE où la structure est recherchée à partir des données.
+
+**Analyse factorielle exploratoire (AFE)**
+: Méthode qui cherche, à partir des corrélations observées entre variables, une structure factorielle compatible avec ces corrélations, sans connaître à l'avance le facteur principal de chaque variable.
+
+**Bande de fluctuation**
+: Zone grise du graphique de l'onglet **Vérification** : $\rho \pm 1{,}96\,(1-\rho^2)/\sqrt{N}$. Environ 95 % des corrélations observées devraient s'y trouver lorsque seule la fluctuation d'échantillonnage les écarte de la population.
+
+**Bloc ($\mathbf{X}$, $\mathbf{Y}$)**
+: En corrélation canonique, chacun des deux ensembles de variables mis en relation. Contrairement aux groupes, les blocs ne sont pas enregistrés comme catégories dans les données exportées : ils sont définis après la génération, à partir des facteurs que l'on souhaite associer à chacun.
+
+**Charge factorielle**
+: Coefficient qui décrit l'importance de la relation entre une variable observée et un facteur latent; élément de la matrice $\boldsymbol{\Lambda}$.
+
+**Charge principale**
+: Charge factorielle d'une variable sur son facteur principal — le facteur auquel elle est censée appartenir. Toujours présente dans le générateur.
+
+**Charge secondaire (cross-loading)**
+: Charge factorielle d'une variable sur un facteur autre que son facteur principal. Sa présence et son amplitude déterminent à quel point une structure factorielle s'écarte d'une structure parfaitement simple.
+
+**Coefficient canonique**
+: Coefficient ($a_j$ ou $b_j$) déterminant la combinaison linéaire des variables d'un bloc qui forme une variable canonique. Son interprétation, comme en régression multiple, peut être instable lorsque les variables d'un même bloc sont fortement corrélées entre elles.
+
+**Coefficient de congruence de Tucker**
+: Indice de similarité entre deux colonnes de charges, égal à 1 lorsqu'elles sont proportionnelles. Sert à associer les facteurs estimés aux facteurs vrais malgré l'indétermination de leur ordre et de leur signe; au-delà d'environ 0,95, le facteur est considéré comme retrouvé.
+
+**Communalité**
+: Partie de la variance d'une variable qui est expliquée par les facteurs communs, $h_i^2 = \left[\boldsymbol{\Lambda}\boldsymbol{\Phi}\boldsymbol{\Lambda}^{\mathsf T}\right]_{ii}$. Pour une variable standardisée, le complément à 1 de la communalité est sa composante propre (unicité).
+
+**Corrélation canonique**
+: Corrélation entre une variable canonique $U_k$ d'un premier bloc et une variable canonique $V_k$ d'un second bloc. La première corrélation canonique, $\rho_1 = \operatorname{Cor}(U_1,V_1)$, représente la relation maximale pouvant être obtenue entre une combinaison linéaire des variables du premier ensemble et une combinaison linéaire des variables du second.
+
+**Corrélation croisée**
+: En corrélation canonique, corrélation entre une variable d'un bloc et la variable canonique de l'*autre* bloc, par exemple $\operatorname{Cor}(X_j,V_k)$. Renseigne sur la manière dont les variables d'un bloc sont reliées à la combinaison construite dans l'autre.
+
+**Corrélation de structure**
+: En corrélation canonique, corrélation entre une variable et la variable canonique de son *propre* bloc, par exemple $\operatorname{Cor}(X_j,U_k)$. Indique dans quelle mesure chaque variable est associée à la dimension canonique correspondante.
+
+**Corrélation factorielle**
+: Corrélation entre deux facteurs latents; élément hors diagonale de la matrice $\boldsymbol{\Phi}$.
+
+**Corrélation polychorique**
+: Estimation de la corrélation entre deux réponses ordinales supposées provenir de variables continues sous-jacentes découpées par des seuils. Souvent préférable à une corrélation de Pearson entre codes Likert lorsqu'une AFE ou une CFA traite explicitement les réponses comme ordinales.
+
+**Covariance factorielle**
+: Matrice $\boldsymbol{\Phi}_g$ décrivant à la fois les variances et les relations entre les facteurs latents d'un groupe. Se distingue de la matrice de corrélations factorielles dès que les variances des facteurs diffèrent de 1.
+
+**Covariance globale (population mélangée)**
+: Matrice de covariance d'une population résultant du mélange de plusieurs groupes, $\boldsymbol{\Sigma} = \sum_g w_g\left[\boldsymbol{\Sigma}_g + (\boldsymbol{\mu}_g-\boldsymbol{\mu})(\boldsymbol{\mu}_g-\boldsymbol{\mu})^{\mathsf T}\right]$. Elle combine la variabilité à l'intérieur des groupes et la variabilité causée par la séparation de leurs moyennes; elle n'est donc jamais une simple moyenne des covariances de groupe.
+
+**DIF (fonctionnement différentiel d'item)**
+: Situation dans laquelle un item ne fonctionne pas de la même manière dans deux groupes à niveau latent égal. Dans le générateur, le DIF est représenté par un décalage d'intercept pour une réponse continue ou par un décalage des seuils pour une réponse Likert.
+
+**Distance de Mahalanobis**
+: Mesure de séparation entre deux groupes qui tient compte de la variabilité et des corrélations entre variables, $D^2 = (\boldsymbol{\mu}_1-\boldsymbol{\mu}_2)^{\mathsf T}\boldsymbol{\Sigma}^{-1}(\boldsymbol{\mu}_1-\boldsymbol{\mu}_2)$, contrairement à une distance brute entre moyennes.
+
+**Données manquantes — MCAR, MAR, MNAR**
+: Valeurs non observées, laissées vides dans les fichiers CSV et Excel exportés. MCAR signifie que l'absence est entièrement aléatoire; MAR qu'elle dépend de variables observées; MNAR qu'elle dépend aussi de la valeur qui devient manquante. Le mécanisme, et non seulement le taux d'absence, guide le choix d'une stratégie d'analyse.
+
+**Écart absolu (moyen, maximal)**
+: Résumés numériques de l'onglet **Vérification**. L'écart absolu moyen, $\bar d = \frac{1}{m}\sum_{j<k}|r_{jk}-\rho_{jk}|$, résume l'écart global entre corrélations observées et populationnelles; l'écart absolu maximal, $d_{\max}$, signale la paire de variables la plus fluctuante.
+
+**Écart moyen signé**
+: Moyenne des différences $r_{jk}-\rho_{jk}$ dans l'onglet **Vérification**. Proche de 0 lorsque les écarts sont aléatoires; nettement négatif lorsque les corrélations sont atténuées (codage Likert), positif lorsqu'elles sont gonflées (acquiescement).
+
+**Échantillon**
+: Ensemble des observations effectivement générées à partir d'une population. Ses statistiques (moyennes, corrélations) fluctuent autour des paramètres populationnels correspondants.
+
+**ECV (explained common variance)**
+: Dans un modèle bifactoriel, part de la variance commune expliquée par le facteur général, $\sum_j\lambda_{jG}^2 \big/ \sum_j(\lambda_{jG}^2+\lambda_{jk}^2)$.
+
+**Erreur de première espèce**
+: Rejet à tort de l'hypothèse nulle alors qu'elle est vraie dans la population. Sous une population de référence sans différence réelle, une proportion des simulations répétées produira un résultat significatif uniquement par ce mécanisme, au taux nominal du seuil choisi.
+
+**Erreur-type**
+: Écart-type de la distribution d'échantillonnage d'une statistique. Pour une moyenne, $SE(\bar X) = \sigma/\sqrt{N}$; diminue lorsque la taille de l'échantillon augmente.
+
+**Facteur général**
+: Voir *Structure bifactorielle*.
+
+**Facteur latent**
+: Variable non observée directement, censée expliquer les relations entre plusieurs variables observées; élément du vecteur $\mathbf{F}$ dans le modèle $\mathbf{X}=\boldsymbol{\Lambda}\mathbf{F}+\boldsymbol{\varepsilon}$.
+
+**Facteur principal**
+: Facteur auquel une variable observée est censée appartenir en priorité; détermine sur quelle colonne de $\boldsymbol{\Lambda}$ sa charge principale est placée.
+
+**Fiabilité maximale (H)**
+: Fidélité de la meilleure combinaison pondérée des items d'un facteur, $H = \frac{\sum_j \lambda_j^2/(1-\lambda_j^2)}{1+\sum_j \lambda_j^2/(1-\lambda_j^2)}$. Elle détermine l'atténuation de la corrélation canonique par rapport à la corrélation latente.
+
+**Fidélité populationnelle**
+: Fidélité exacte d'une échelle, calculée à partir des paramètres connus de la population plutôt qu'estimée à partir d'un échantillon (sous-onglet de **Structure populationnelle**).
+
+**Fluctuation d'échantillonnage**
+: Variation naturelle des statistiques (moyennes, variances, corrélations) d'un échantillon à l'autre, même lorsque tous les échantillons proviennent exactement de la même population.
+
+**Fonction discriminante**
+: Fonction $\delta_g(\mathbf{x})$ utilisée pour comparer les groupes en classification; une observation est attribuée au groupe dont la fonction discriminante est la plus élevée. Linéaire en LDA, elle comporte des termes quadratiques en QDA.
+
+**Graine aléatoire (seed)**
+: Valeur qui fixe l'état du générateur de nombres pseudo-aléatoires. Avec les mêmes réglages, la même graine reproduit exactement la même population et le même échantillon. Lorsque des réglages sont des plages, une nouvelle graine change aussi la population; le bouton **Nouvel échantillon, même population** ne change que les personnes.
+
+**Groupe de référence**
+: Le groupe `G1` dans une simulation multigroupe. Ses moyennes factorielles sont nulles par définition et sa structure factorielle sert de référence lorsque des variations de covariance sont demandées pour les autres groupes.
+
+**Hypothèse nulle multivariée**
+: En MANOVA, l'hypothèse selon laquelle les vecteurs de moyennes de tous les groupes sont égaux, $H_0: \boldsymbol{\mu}_1=\boldsymbol{\mu}_2=\cdots=\boldsymbol{\mu}_G$.
+
+**Indice de redondance**
+: En corrélation canonique, mesure complétant la corrélation canonique en évaluant dans quelle proportion la variance d'un bloc est représentée par sa variable canonique et associée à l'autre bloc. Une corrélation canonique élevée n'implique pas nécessairement un indice de redondance élevé.
+
+**Invariance configurationnelle**
+: Premier niveau d'invariance de mesure : la même organisation factorielle (même nombre de facteurs, mêmes indicateurs associés aux mêmes facteurs) s'applique dans tous les groupes. Toujours satisfaite par le générateur.
+
+**Invariance métrique**
+: Niveau d'invariance imposant l'égalité des charges factorielles entre groupes, $\boldsymbol{\Lambda}_1=\cdots=\boldsymbol{\Lambda}_G$. Toujours vraie dans le générateur, puisque $\boldsymbol{\Lambda}$ est commune à tous les groupes par construction.
+
+**Invariance scalaire / stricte**
+: Niveaux d'invariance imposant respectivement l'égalité des intercepts — ou des seuils pour des réponses ordinales — et l'égalité des variances résiduelles entre groupes. Le générateur respecte les deux par défaut; il peut violer l'invariance scalaire pour un item de `G2` (DIF), mais jamais l'invariance stricte.
+
+**Item inversé**
+: Item formulé en sens inverse de son échelle; il reçoit des charges négatives et doit être recodé avant le calcul d'un score. Sa communalité et son unicité sont inchangées.
+
+**Lambda de Wilks**
+: L'une des quatre statistiques classiques de la MANOVA, avec la trace de Pillai, la trace de Hotelling-Lawley et la plus grande racine de Roy. Ces statistiques ne sont pas numériquement interchangeables, bien qu'elles convergent souvent vers les mêmes conclusions.
+
+**MANOVA**
+: Analyse de variance multivariée; teste si plusieurs groupes diffèrent sur une combinaison de plusieurs variables dépendantes considérées simultanément, plutôt que variable par variable.
+
+**Matrice de confusion**
+: Tableau croisant les groupes réels et les groupes prédits par une règle de classification. La diagonale contient les observations correctement classées; les autres cellules montrent les types d'erreurs commises.
+
+**Modèle congénérique**
+: Modèle de mesure à un facteur dans lequel les indicateurs peuvent avoir des charges différentes et des variances résiduelles différentes. C'est la structure que le générateur produit par défaut dès que les charges principales sont tirées dans une plage plutôt que fixées.
+
+**Modèle parallèle**
+: Modèle de mesure à un facteur imposant $\lambda_1=\cdots=\lambda_p$ et $\theta_1=\cdots=\theta_p$ : indicateurs à charges égales et variances résiduelles égales. Le générateur peut le produire exactement avec des charges principales Fixe et aucune charge secondaire.
+
+**Modèle tau-équivalent**
+: Modèle de mesure à un facteur imposant seulement $\lambda_1=\cdots=\lambda_p$, en laissant les variances résiduelles libres. Contrainte plus faible que le parallélisme; satisfaite automatiquement par toute population strictement parallèle.
+
+**Moyenne factorielle**
+: Moyenne d'un facteur latent dans un groupe donné, $\boldsymbol{\mu}_{F,g}=E(\mathbf{F}_g)$. Nulle par définition dans le groupe de référence `G1`.
+
+**Nouvel échantillon, même population**
+: Bouton de l'onglet **Configurer** qui conserve tous les tirages définissant la population du dernier jeu généré (charges, corrélations, seuils, etc.) et ne tire que de nouvelles personnes. Les graines de la population et de l'échantillon permettent de reproduire le jeu.
+
+**Oméga (ω)**
+: Fidélité d'un score : part de sa variance due aux facteurs communs. L'application donne le **ω total** (tous les facteurs) et le **ω du facteur** (le seul facteur de l'échelle) pour chaque échelle de la population.
+
+**Oméga hiérarchique (ωh)**
+: Dans un modèle bifactoriel, part de la variance du score total due au seul facteur général. Une valeur d'au moins 0,80 suggère un score total essentiellement unidimensionnel.
+
+**Population**
+: Ensemble défini par les paramètres du générateur ($\boldsymbol{\Lambda}$, $\boldsymbol{\Phi}$, $\boldsymbol{\Theta}$, moyennes et covariances factorielles par groupe), dont un échantillon est ensuite tiré. Contrairement aux données réelles, elle est ici connue exactement.
+
+**Précision (classification)**
+: Proportion des observations prédites dans une catégorie qui y appartiennent réellement, $VP/(VP+FP)$. À ne pas confondre avec la précision globale, qui peut être trompeuse lorsque les groupes sont déséquilibrés.
+
+**Probabilité a priori**
+: Probabilité $\pi_g$ qu'une observation appartienne au groupe $g$ avant même l'examen de ses variables, intégrée dans la fonction discriminante. Peut correspondre aux proportions observées dans l'échantillon ou être fixée égale entre les groupes selon la question posée.
+
+**Puissance statistique**
+: Probabilité qu'un test détecte une différence populationnelle réelle. Dépend à la fois de la taille de l'effet et de la taille de l'échantillon; à distinguer de la taille de l'effet elle-même.
+
+**Rappel (classification)**
+: Proportion des observations appartenant réellement à une catégorie qui ont été correctement reconnues, $VP/(VP+FN)$.
+
+**Redondance**
+: Voir *Indice de redondance*.
+
+**Réponse Likert**
+: Réponse ordinale à $K$ catégories (de 2 à 7 dans le générateur), obtenue en découpant une réponse continue sous-jacente à l'aide de $K-1$ seuils; les catégories sont ordonnées, mais leurs écarts ne doivent pas être interprétés comme nécessairement égaux.
+
+**Rotation oblique**
+: Rotation factorielle qui autorise des facteurs corrélés dans la solution estimée. Généralement plus cohérente avec une population dont les facteurs générateurs sont eux-mêmes corrélés.
+
+**Rotation orthogonale**
+: Rotation factorielle qui impose l'indépendance entre les facteurs estimés. Cohérente uniquement si les facteurs de la population sont eux-mêmes indépendants.
+
+**Score F1**
+: Mesure combinant précision et rappel pour une catégorie, $F1 = 2\cdot\dfrac{\text{Précision}\times\text{Rappel}}{\text{Précision}+\text{Rappel}}$.
+
+**Score factoriel**
+: Valeur d'un facteur latent pour une observation donnée; élément du vecteur $\mathbf{f}_n$ utilisé pour construire les variables observées de cette observation, $\mathbf{x}_n=\boldsymbol{\Lambda}\mathbf{f}_n+\boldsymbol{\varepsilon}_n$.
+
+**Structure bifactorielle**
+: Structure dans laquelle un **facteur général** (`FG`) influence tous les items et des **facteurs spécifiques** rendent compte de ce que les items d'une même échelle partagent en plus. Tous les facteurs sont orthogonaux.
+
+**Structure simple**
+: Structure factorielle idéalisée dans laquelle chaque variable ne charge que sur un seul facteur (aucune charge secondaire), produisant des blocs de variables nettement distincts dans la matrice de corrélations.
+
+**Style de réponse**
+: Manière systématique d'utiliser une échelle, indépendante en partie du contenu mesuré. Le générateur peut appliquer à certains répondants une tendance au milieu, aux extrêmes ou à l'acquiescement sur l'ensemble de leurs items Likert.
+
+**Surajustement**
+: Phénomène par lequel une méthode statistique apprend des particularités accidentelles de l'échantillon d'entraînement plutôt qu'une véritable structure populationnelle, produisant une performance illusoire qui ne se reproduit pas sur de nouvelles données.
+
+**Taille d'effet**
+: Ampleur d'une différence populationnelle, indépendante de la taille de l'échantillon. À distinguer de la signification statistique, qui dépend conjointement de la taille de l'effet et de la taille de l'échantillon.
+
+**Taux de classification de référence**
+: Performance obtenue par une règle triviale (attribution au hasard, ou toujours prédire le groupe le plus fréquent), servant de point de comparaison pour juger si une méthode de classification apporte réellement de l'information.
+
+**Taux de classification maximal**
+: Meilleure performance possible d'une règle de classification dans une population donnée. Pour deux groupes de même taille, normaux et à covariances égales, il vaut $\Phi(D/2)$, où $D$ est la distance de Mahalanobis.
+
+**Test de Box**
+: Test de l'hypothèse d'égalité des matrices de covariance entre groupes, $H_0:\boldsymbol{\Sigma}_1=\cdots=\boldsymbol{\Sigma}_G$. Sensible aux écarts à la normalité et à la taille de l'échantillon; à interpréter avec d'autres diagnostics plutôt que comme un verdict automatique.
+
+**Trace de Hotelling-Lawley**
+: Voir *Lambda de Wilks*.
+
+**Trace de Pillai**
+: Voir *Lambda de Wilks*. Souvent considérée comme relativement robuste lorsque l'hypothèse d'homogénéité des covariances est imparfaitement respectée.
+
+**Unicité**
+: Composante de la variance d'une variable qui n'est pas expliquée par les facteurs communs, $\theta_i = 1-h_i^2$ pour une variable standardisée. Élément diagonal de la matrice $\boldsymbol{\Theta}$.
+
+**Validation croisée**
+: Procédure d'évaluation d'une règle de classification sur des observations distinctes de celles ayant servi à l'estimer, afin d'obtenir une estimation réaliste de sa performance sur de nouvelles données plutôt qu'une performance optimiste mesurée sur les données d'entraînement.
+
+**Variable auxiliaire (MAR)**
+: Dans le mécanisme MAR du générateur, item tiré au hasard qui reste complet et dont la valeur détermine la probabilité d'absence des autres réponses de la personne.
+
+**Variable canonique**
+: Combinaison linéaire des variables d'un bloc, par exemple $U_1=a_1X_1+\cdots+a_pX_p$, construite pour maximiser sa corrélation avec la variable canonique correspondante de l'autre bloc.
+
+**Vérification (onglet)**
+: Onglet de l'application comparant, pour chaque paire de variables, la corrélation observée à la corrélation populationnelle, avec une bande de fluctuation et quatre résumés (écart absolu moyen et maximal, écart moyen signé, pourcentage de paires dans la bande). On peut y comparer les réponses continues initiales, les données finales (Pearson) ou, pour des réponses Likert, les corrélations polychoriques.

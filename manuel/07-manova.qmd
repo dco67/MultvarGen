@@ -1,0 +1,493 @@
+# Générer des données pour la MANOVA {#sec-manova}
+
+```{r}
+#| include: false
+source("_common.R")
+mn <- generer(2024, group_sizes = c(200L, 200L, 200L), group_mean_diff = "moderate")
+Ymn <- as.matrix(mn$response); gmn <- factor(mn$group_membership)
+fit_mn <- manova(Ymn ~ gmn)
+pil <- summary(fit_mn, test = "Pillai")$stats; wil <- summary(fit_mn, test = "Wilks")$stats
+uni <- sapply(c(1, 6, 11), function(v) { a <- summary(aov(Ymn[, v] ~ gmn))[[1]]; c(F = a[1, 4], p = a[1, 5]) })
+pv <- function(p) if (p < 0.001) "p < 0,001" else paste0("p = ", fr(p, 3))
+# Échantillonner directement dans la population de chaque groupe
+tirer_groupes <- function(pop, n) {
+  L <- pop$loadings; Th <- diag(pop$uniquenesses); G <- length(pop$group_sizes)
+  n <- rep(n, length.out = G)
+  Y <- do.call(rbind, lapply(seq_len(G), function(g)
+    MASS::mvrnorm(n[g], drop(L %*% pop$factor_means[g, ]),
+                  L %*% pop$group_factor_covariances[[g]] %*% t(L) + Th)))
+  list(Y = Y, g = factor(rep(paste0("G", seq_len(G)), times = n)))
+}
+p_manova <- function(x, test) summary(manova(x$Y ~ x$g), test = test)$stats[1, 6]
+```
+
+::: {.callout-tip title="Objectifs d'apprentissage"}
+À la fin de ce chapitre, vous devriez être capable de :
+
+- formuler l'hypothèse nulle multivariée de la MANOVA et expliquer en quoi elle diffère d'une série de tests univariés;
+- expliquer comment une différence de moyenne factorielle introduite dans le générateur se transmet aux variables observées par $\boldsymbol{\Lambda}$;
+- distinguer la taille d'un effet populationnel de la puissance statistique d'un test;
+- expliquer le rôle de l'hypothèse de covariance commune dans la MANOVA classique et la fonction du test de Box;
+- concevoir un scénario MANOVA (référence, effet modéré, hétérogénéité de covariance) et en interpréter correctement les résultats attendus.
+:::
+
+::: {.callout-important title="Idée centrale"}
+Une population multivariée peut différer d'une autre par son vecteur de moyennes, par sa structure de covariance, ou par les deux à la fois. La MANOVA classique ne teste que la première de ces dimensions. Le générateur permet de contrôler ces deux dimensions indépendamment, et donc de savoir exactement ce qu'une MANOVA devrait — ou ne devrait pas — être en mesure de détecter.
+:::
+
+::: {.callout-warning title="Pièges classiques"}
+- Interpréter un résultat MANOVA non significatif comme une preuve que les populations sont identiques : elles peuvent différer par leur covariance sans que la MANOVA, qui ne porte que sur les moyennes, le détecte.
+- Confondre signification statistique et taille d'effet : un très grand échantillon peut rendre significative une différence populationnelle minuscule.
+- Interpréter un résultat significatif isolé, obtenu sans avoir introduit de différence populationnelle réelle, comme une découverte plutôt que comme l'erreur de première espèce attendue au taux nominal.
+- Croire que multiplier le nombre de variables améliore automatiquement une MANOVA : des variables fortement redondantes (chargées sur le même facteur) ajoutent peu d'information réellement nouvelle.
+- Utiliser le test de Box comme une décision automatique déterminant si la MANOVA « peut être utilisée », plutôt que comme un diagnostic parmi d'autres, sensible lui-même à la taille de l'échantillon et à la normalité.
+:::
+
+La MANOVA est utilisée lorsque plusieurs variables dépendantes sont comparées simultanément entre deux groupes ou davantage. Elle cherche à déterminer si les groupes diffèrent sur une combinaison multivariée des variables, plutôt que d'effectuer une série de comparaisons séparées variable par variable.
+
+Le générateur est particulièrement bien adapté à ce type de scénario. En déplaçant les moyennes de certains facteurs latents, on crée des différences cohérentes entre groupes sur plusieurs variables observées à la fois. Les groupes peuvent également partager la même structure de covariance ou présenter des structures différentes, ce qui permet d'étudier les conditions dans lesquelles les hypothèses classiques de la MANOVA sont plus ou moins bien respectées.
+
+## Le problème multivarié
+
+Supposons que chaque observation soit décrite par un vecteur de $p$ variables :
+
+$$
+\mathbf{X}
+=
+(X_1,X_2,\ldots,X_p)^{\mathsf T}.
+$$
+
+Dans le groupe $g$, le vecteur de moyennes populationnelles peut être noté :
+
+$$
+\boldsymbol{\mu}_g
+=
+E(\mathbf{X}_g).
+$$
+
+L'hypothèse nulle générale de la MANOVA peut alors être exprimée comme :
+
+$$
+H_0:
+\boldsymbol{\mu}_1
+=
+\boldsymbol{\mu}_2
+=
+\cdots
+=
+\boldsymbol{\mu}_G.
+$$
+
+La question n'est donc pas de savoir si une seule variable diffère entre les groupes, mais si les vecteurs de moyennes sont identiques dans l'espace multivarié.
+
+Deux groupes peuvent présenter des écarts modestes sur chacune des variables prises séparément, tout en étant nettement distincts lorsque ces variables sont considérées conjointement. C'est précisément cette combinaison de différences que la MANOVA cherche à détecter.
+
+## Comment le générateur crée une différence multivariée
+
+Dans le générateur, les moyennes des variables observées découlent des moyennes factorielles. Pour le groupe $g$ :
+
+$$
+E(\mathbf{X}_g)
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\mu}_{F,g}.
+$$
+
+Une différence introduite sur un facteur latent est donc transmise aux variables qui chargent sur ce facteur. Les indicateurs les plus fortement associés à la dimension latente tendent à présenter les écarts de moyennes les plus importants.
+
+Cette propriété permet de créer des différences multivariées structurées plutôt qu'un ensemble arbitraire de déplacements indépendants. Plusieurs variables changent ensemble parce qu'elles partagent une même source latente de variation.
+
+## Générer un jeu approprié avec MultvarGen
+
+Pour une MANOVA de référence, créez **3** facteurs avec **Fixe — 5** variables par facteur, des charges principales **élevées (0,65–0,80)**, aucune charge secondaire et une corrélation factorielle **fixe de 0,30**. Choisissez **3** groupes de **200** personnes, des différences de moyennes **modérées** et des covariances **identiques**. Utilisez une distribution **normale**, des réponses **continues** et aucune donnée manquante.
+
+Dans les données exportées, utilisez `Groupe` comme variable de regroupement et les quinze indicateurs comme variables dépendantes. Consultez d'abord les tableaux de moyennes par groupe : `G2` est déplacé sur le premier facteur et `G3` sur le deuxième, de sorte que les écarts attendus se concentrent dans deux blocs d'indicateurs différents. Dans **Description par groupe**, affichez ensuite les **covariances** de chaque groupe : elles devraient demeurer comparables d'un groupe à l'autre. Ce scénario isole donc la différence de moyennes que la MANOVA doit détecter.
+
+## Un premier scénario sans effet
+
+La meilleure condition de référence consiste à générer plusieurs groupes sans différence de moyennes et avec des covariances égales.
+
+Dans cette situation :
+
+$$
+\boldsymbol{\mu}_1
+=
+\boldsymbol{\mu}_2
+=
+\cdots
+=
+\boldsymbol{\mu}_G.
+$$
+
+Les différences observées dans les échantillons résultent uniquement de la fluctuation d'échantillonnage. Une MANOVA appliquée à des simulations répétées ne devrait donc pas rejeter systématiquement l'hypothèse nulle.
+
+Ce scénario est pédagogiquement important parce qu'il montre qu'un test statistique peut produire occasionnellement un résultat significatif même lorsque la population ne contient aucune différence. Le seuil de signification représente précisément un risque d'erreur de première espèce, et non une garantie qu'aucun faux positif ne surviendra jamais.
+
+## Introduire une différence faible
+
+On peut ensuite conserver exactement la même structure de covariance tout en introduisant une faible différence de moyennes factorielles.
+
+Les groupes occupent alors des positions légèrement différentes dans l'espace multivarié. Les distributions demeurent largement superposées, mais le vecteur de moyennes n'est plus identique.
+
+Avec un petit échantillon, cette différence peut être difficile à détecter. Avec un échantillon plus grand, la puissance du test augmente et la séparation multivariée devient plus facilement identifiable.
+
+Cette expérience permet de distinguer deux propriétés qui sont parfois confondues : la taille de l'effet populationnel et la puissance statistique. L'une décrit la différence entre les populations; l'autre dépend également de la taille de l'échantillon et de la variabilité des données.
+
+La @fig-puissance-manova résume cette relation pour la structure du fil rouge et trois groupes. Chaque point provient de 300 échantillons tirés de la même population.
+
+```{r}
+#| label: fig-puissance-manova
+#| cache: true
+#| fig-cap: "Proportion d'échantillons où la MANOVA (trace de Pillai, α = 5 %) rejette l'égalité des vecteurs de moyennes, selon la taille de chaque groupe et le niveau des différences latentes (3 groupes, 3 facteurs corrélés à 0,30, 15 items, charges élevées, graine 2024; 300 échantillons par point). Sans différence, le taux de rejet reste autour de 5 %."
+#| fig-height: 3.4
+set.seed(71)
+niveaux <- c(none = "Aucune", low = "Faibles (0,25)", moderate = "Modérées (0,50)", high = "Fortes (0,80)")
+puis <- do.call(rbind, lapply(names(niveaux), function(nv) {
+  pop <- generer(2024, group_sizes = c(100L, 100L, 100L), group_mean_diff = nv)
+  do.call(rbind, lapply(c(20, 40, 60, 100, 150), function(n) {
+    rej <- replicate(300, p_manova(tirer_groupes(pop, n), "Pillai") < 0.05)
+    data.frame(niveau = niveaux[[nv]], n = n, taux = mean(rej))
+  }))
+}))
+puis$niveau <- factor(puis$niveau, levels = niveaux)
+ggplot(puis, aes(n, taux, colour = niveau)) + geom_line(linewidth = 1.05) + geom_point(size = 2) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", colour = "grey50") +
+  scale_colour_manual(values = c("grey50", pal$vert, pal$bleu, pal$orange), name = "Différences latentes") +
+  scale_y_continuous(labels = function(x) pc(x, 0), limits = c(0, 1)) +
+  scale_x_continuous(breaks = c(20, 40, 60, 100, 150)) +
+  labs(x = "Taille de chaque groupe", y = "Taux de rejet (puissance)") +
+  guides(colour = guide_legend(nrow = 2))
+```
+
+Avec des différences modérées, une vingtaine de personnes par groupe ne suffit pas (puissance de `r pc(puis$taux[puis$niveau == "Modérées (0,50)" & puis$n == 20], 0)`); une centaine donne une puissance de `r pc(puis$taux[puis$niveau == "Modérées (0,50)" & puis$n == 100], 0)`. Avec des différences faibles, même 150 personnes par groupe ne donnent qu'une puissance de `r pc(puis$taux[puis$niveau == "Faibles (0,25)" & puis$n == 150], 0)` : plus d'une chance sur deux de ne rien détecter.
+
+## Augmenter la séparation entre les groupes
+
+Lorsque l'intensité des différences de moyennes augmente, les centres des groupes s'éloignent dans l'espace multivarié. Une différence modérée ou forte produit donc généralement un signal plus facile à détecter.
+
+Il est utile d'examiner simultanément les moyennes par groupe dans l'application. Les variables associées au facteur déplacé devraient présenter des écarts cohérents, alors que les variables principalement associées à d'autres facteurs peuvent être beaucoup moins affectées.
+
+La MANOVA exploite ces différences conjointement. Une structure dans laquelle plusieurs variables se déplacent dans une direction cohérente peut être détectée plus efficacement par une approche multivariée que par une lecture fragmentée des analyses univariées.
+
+## Le rôle de la corrélation entre variables
+
+La corrélation entre les variables est centrale en MANOVA. Si les variables dépendantes étaient totalement indépendantes, l'information multivariée serait essentiellement une juxtaposition de plusieurs informations séparées. Lorsqu'elles sont corrélées, leur structure commune devient pertinente pour déterminer les directions dans lesquelles les groupes se distinguent.
+
+Le générateur permet de contrôler cette propriété à travers les facteurs latents et leurs corrélations. Des indicateurs appartenant au même facteur sont naturellement reliés, et des corrélations entre facteurs peuvent également créer des relations entre différents ensembles de variables.
+
+Une forte redondance n'ajoute toutefois pas nécessairement beaucoup d'information. Si plusieurs variables sont presque interchangeables, elles contribuent peu de dimensions nouvelles au problème multivarié. À l'inverse, plusieurs variables modérément reliées mais non redondantes peuvent fournir une structure particulièrement informative.
+
+## MANOVA et analyses univariées
+
+Un résultat multivarié significatif ne signifie pas que chaque variable diffère individuellement entre les groupes. La MANOVA porte sur une combinaison des variables et non sur chaque composante séparément.
+
+Après un résultat multivarié, des analyses de suivi peuvent être utilisées pour déterminer quelles variables contribuent aux différences observées. Ces analyses doivent cependant être interprétées comme une étape complémentaire et non comme un remplacement de la question multivariée initiale.
+
+La simulation permet de rendre cette distinction très claire. Une différence introduite sur un facteur latent peut affecter fortement certains indicateurs et seulement légèrement d'autres. Le résultat global peut alors être significatif même si plusieurs comparaisons univariées prises isolément sont modestes.
+
+## Les quatre statistiques classiques
+
+La MANOVA peut être résumée à l'aide de plusieurs statistiques classiques, notamment :
+
+- la trace de Pillai;
+- le lambda de Wilks;
+- la trace de Hotelling-Lawley;
+- la plus grande racine de Roy.
+
+Ces statistiques reposent sur des transformations différentes de la séparation entre les groupes relativement à la variation présente à l'intérieur des groupes. Elles ne sont donc pas numériquement interchangeables, même si elles conduisent souvent à des conclusions semblables dans les situations bien comportées.
+
+Pour les scénarios de simulation, il est surtout intéressant d'observer dans quelles conditions leurs conclusions convergent ou divergent. Il n'est pas nécessaire de faire du générateur un outil d'enseignement détaillé de chacune de ces statistiques : leur théorie appartient davantage au logiciel ou au manuel consacré à la MANOVA.
+
+## La covariance commune
+
+La MANOVA classique suppose généralement que les groupes possèdent des matrices de covariance comparables. Dans la population, cette situation peut être exprimée par :
+
+$$
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2
+=
+\cdots
+=
+\boldsymbol{\Sigma}_G.
+$$
+
+Le générateur permet de produire précisément cette condition en conservant la même structure factorielle de covariance entre les groupes.
+
+Cette configuration constitue la situation la plus propre pour une première expérience. Les groupes diffèrent alors par leurs moyennes mais non par leur structure de dispersion. Si une différence multivariée est détectée, elle peut être reliée directement à la séparation de leurs centres.
+
+## Violer l'homogénéité des covariances
+
+On peut ensuite introduire des différences de covariance entre les groupes tout en conservant les mêmes différences de moyennes.
+
+La question statistique change alors légèrement. Les groupes ne se distinguent plus seulement par leur position, mais aussi par leur forme ou leur dispersion. La MANOVA teste toujours les différences de moyennes, mais l'une de ses hypothèses classiques devient moins bien respectée.
+
+Cette simulation permet d'étudier la robustesse des différentes statistiques multivariées. Elle permet aussi de montrer pourquoi la vérification des matrices de covariance est pertinente : deux groupes peuvent présenter des moyennes comparables tout en ayant des structures de variation très différentes.
+
+## Le test de Box
+
+Le test de Box est souvent utilisé pour examiner l'hypothèse d'égalité des matrices de covariance entre groupes.
+
+Son hypothèse nulle peut être représentée par :
+
+$$
+H_0:
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2
+=
+\cdots
+=
+\boldsymbol{\Sigma}_G.
+$$
+
+Dans une simulation où le générateur conserve exactement les mêmes covariances populationnelles, les différences observées entre matrices sont seulement échantillonnales. Lorsque des différences de covariance sont volontairement introduites, le test dispose au contraire d'une véritable différence populationnelle à détecter.
+
+Le test de Box [@Box1949] est connu pour être sensible aux écarts à la normalité et à la taille de l'échantillon. Il est donc préférable de l'interpréter avec les autres diagnostics plutôt que comme une décision automatique déterminant à elle seule si la MANOVA peut être utilisée.
+
+## Pillai et la robustesse
+
+Parmi les statistiques classiques de MANOVA, la trace de Pillai est souvent considérée comme relativement robuste lorsque certaines hypothèses sont imparfaitement respectées, particulièrement lorsque les tailles de groupes sont raisonnables.
+
+Un scénario instructif consiste à générer d'abord des groupes de même taille avec des covariances égales, puis à introduire des différences modérées de covariance. On peut ensuite comparer les conclusions fournies par Pillai et Wilks [@Olson1974].
+
+La @fig-robustesse-manova montre ce qui se passe sous l'hypothèse nulle (aucune différence de moyennes) lorsque les covariances diffèrent fortement entre trois groupes, avec des tailles égales ou inégales.
+
+```{r}
+#| label: fig-robustesse-manova
+#| cache: true
+#| fig-cap: "Taux d'erreur de première espèce de la MANOVA (α = 5 %) lorsque les moyennes sont égales mais que les covariances diffèrent fortement entre trois groupes (graine 2024, 1 000 échantillons par condition). Dans cette population, G2 est le groupe le plus dispersé (écart-type de F1 porté à 1,40) et G3 le moins dispersé."
+#| fig-height: 3.3
+set.seed(72)
+pop_h <- generer(2024, group_sizes = c(100L, 100L, 100L), group_cov_diff = "high")
+plans <- list("Égaux (60, 60, 60)" = c(60, 60, 60),
+              "Grand groupe dispersé (40, 100, 40)" = c(40, 100, 40),
+              "Petit groupe dispersé (80, 20, 80)" = c(80, 20, 80))
+rob <- do.call(rbind, lapply(names(plans), function(nm) {
+  r <- t(replicate(1000, { x <- tirer_groupes(pop_h, plans[[nm]])
+    c(p_manova(x, "Pillai"), p_manova(x, "Wilks")) < 0.05 }))
+  data.frame(plan = nm, test = c("Pillai", "Wilks"), taux = colMeans(r))
+}))
+rob$plan <- factor(rob$plan, levels = names(plans))
+ggplot(rob, aes(plan, taux, fill = test)) + geom_col(position = position_dodge(0.7), width = 0.62) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", colour = "grey40") +
+  geom_text(aes(label = pc(taux, 1)), position = position_dodge(0.7), vjust = -0.4, size = 3.2) +
+  scale_fill_manual(values = c(pal$bleu, pal$orange), name = NULL) +
+  scale_y_continuous(labels = function(x) pc(x, 0), expand = expansion(mult = c(0, 0.15))) +
+  labs(x = "Tailles des groupes", y = "Taux d'erreur de type I")
+```
+
+Les taux restent ici entre `r pc(min(rob$taux), 1)` et `r pc(max(rob$taux), 1)`. Leur ordre suit la règle bien connue : le test est le plus libéral lorsque le groupe le plus dispersé est aussi le plus petit, et le plus proche du taux nominal lorsqu'il est le plus grand. Mais l'effet est modeste, et Pillai et Wilks se comportent presque de la même façon. Les différences de covariance que produit l'application (la variance d'un facteur et quelques corrélations) restent donc compatibles avec une MANOVA classique, surtout avec des groupes de tailles comparables. Pour étudier des violations plus sévères, il faudrait des écarts de dispersion plus grands que ceux de l'application, ou des groupes encore plus déséquilibrés.
+
+L'objectif n'est pas de chercher une règle mécanique selon laquelle une statistique serait toujours préférable. La simulation montre plutôt que les choix méthodologiques prennent leur sens dans une population possédant certaines propriétés.
+
+## Tailles de groupes égales ou différentes
+
+L'équilibre des effectifs joue également un rôle. Lorsque les groupes ont des tailles semblables, certaines violations de l'homogénéité des covariances sont souvent moins problématiques que lorsque les effectifs sont très déséquilibrés.
+
+Une expérience simple consiste à générer d'abord trois groupes de 200 observations, puis à répéter la simulation avec, par exemple, 100, 200 et 300 observations. Si les matrices de covariance sont communes, cette modification concerne surtout la précision des estimations par groupe. Si les covariances diffèrent également, le déséquilibre peut avoir des conséquences plus importantes.
+
+Le générateur permet donc de manipuler séparément deux dimensions souvent confondues : la taille relative des groupes et leurs différences populationnelles.
+
+## Normalité multivariée et distributions asymétriques
+
+La théorie classique de la MANOVA est généralement présentée sous une hypothèse de normalité multivariée à l'intérieur des groupes. Les données réelles s'en écartent souvent, parfois légèrement, parfois de manière substantielle.
+
+Le générateur peut produire des variables approximativement normales ou introduire de l'asymétrie. Cette possibilité permet d'étudier ce qui se produit lorsque les distributions deviennent moins conformes au cas idéal tout en conservant une structure multivariée connue.
+
+Il faut toutefois interpréter ce scénario correctement. Le réglage distributionnel du générateur agit sur la construction des variables et ne constitue pas un bouton produisant n'importe quelle forme arbitraire de non-normalité multivariée. Il fournit néanmoins une façon simple de comparer des conditions plus ou moins favorables aux méthodes classiques.
+
+## Un scénario minimal pour la MANOVA
+
+Une première simulation peut utiliser trois groupes de même taille, trois facteurs et plusieurs indicateurs par facteur. On conserve des covariances égales et on introduit une différence modérée de moyennes.
+
+Dans cette situation, les groupes partagent la même structure de dispersion mais occupent des positions différentes. Une MANOVA devrait donc être en mesure de détecter un effet multivarié si l'échantillon fournit suffisamment d'information.
+
+Après l'analyse, on peut examiner les moyennes de groupes et les analyses univariées de suivi afin de déterminer quelles variables reflètent le plus clairement les différences introduites.
+
+## Un scénario plus difficile
+
+On peut ensuite réduire l'intensité des différences de moyennes, diminuer la taille des groupes et augmenter la corrélation entre plusieurs variables.
+
+La séparation devient alors plus difficile à détecter. Certaines variables peuvent présenter des différences faibles et l'information utile dépend davantage de leur combinaison.
+
+Ce scénario illustre bien l'intérêt de la MANOVA : la question ne consiste pas à accumuler des tests univariés, mais à déterminer si l'ensemble du profil multivarié distingue les groupes.
+
+## Un scénario avec covariance hétérogène
+
+Pour une troisième expérience, on conserve des différences de moyennes modérées mais on introduit également des différences de covariance entre les groupes.
+
+L'analyse doit alors être accompagnée d'une inspection plus attentive des matrices de covariance et des hypothèses. Les statistiques de MANOVA peuvent toujours être calculées, mais leur interprétation se fait dans une population moins conforme au modèle classique homogène.
+
+Cette configuration constitue aussi une excellente transition vers le chapitre consacré à la classification. Une covariance différente n'est pas seulement une complication pour la MANOVA : elle peut devenir une information utile lorsqu'on cherche à déterminer le groupe d'appartenance.
+
+## Une situation sans différence de moyennes mais avec covariances différentes
+
+Un scénario particulièrement instructif consiste à créer des groupes dont les moyennes sont identiques mais dont les matrices de covariance diffèrent.
+
+Dans ce cas :
+
+$$
+\boldsymbol{\mu}_1
+=
+\boldsymbol{\mu}_2
+=
+\cdots
+=
+\boldsymbol{\mu}_G,
+$$
+
+mais :
+
+$$
+\boldsymbol{\Sigma}_1
+\neq
+\boldsymbol{\Sigma}_2.
+$$
+
+La MANOVA n'est pas conçue pour détecter directement cette différence, puisqu'elle porte sur les vecteurs de moyennes. Les groupes sont pourtant réellement différents sur le plan multivarié.
+
+Cette expérience permet de comprendre qu'« absence de différence MANOVA » ne signifie pas « populations multivariées identiques ». Deux populations peuvent avoir exactement le même centre mais des formes complètement différentes.
+
+## Interpréter l'espace multivarié
+
+Il est souvent utile de penser à la MANOVA géométriquement. Chaque groupe forme un nuage de points dans un espace à plusieurs dimensions. Le vecteur de moyennes définit le centre du nuage, tandis que la matrice de covariance décrit sa dispersion et son orientation.
+
+Une différence de moyennes déplace le centre. Une différence de covariance modifie plutôt la forme ou l'orientation du nuage. Ces deux types de différences ne répondent pas à la même question statistique.
+
+Le générateur permet de contrôler ces propriétés séparément, ce qui rend cette représentation géométrique particulièrement concrète.
+
+## Le nombre de variables
+
+Ajouter davantage de variables n'améliore pas automatiquement une MANOVA. Chaque variable supplémentaire augmente la dimension du problème et exige davantage d'information pour estimer correctement la structure de covariance.
+
+Si les variables ajoutées sont fortement redondantes ou ne contribuent pas à la séparation entre groupes, elles peuvent compliquer l'analyse sans apporter beaucoup d'information nouvelle.
+
+Dans un scénario pédagogique, il est donc souvent préférable de commencer avec un nombre raisonnable de variables, puis d'augmenter progressivement la dimension afin d'observer les conséquences sur la stabilité des estimations et la puissance.
+
+## Une expérience sur la redondance
+
+Le moteur factoriel offre une manière particulièrement simple de créer de la redondance. Plusieurs variables fortement chargées sur le même facteur contiennent une information commune importante.
+
+On peut comparer une simulation comportant quelques indicateurs bien choisis à une autre où de nombreux indicateurs très similaires sont ajoutés au même facteur. Le nombre de variables augmente, mais la quantité d'information véritablement nouvelle augmente beaucoup moins.
+
+Cette expérience permet de comprendre pourquoi le nombre de variables ne doit jamais être confondu avec le nombre de dimensions informatives.
+
+## Effet multivarié et taille d'effet
+
+Comme dans les méthodes univariées, la signification statistique ne renseigne pas à elle seule sur l'importance substantielle des différences entre groupes.
+
+Avec un très grand échantillon, une séparation faible peut devenir statistiquement détectable. À l'inverse, un effet populationnel intéressant peut être difficile à détecter dans un petit échantillon.
+
+L'interprétation devrait donc tenir compte à la fois du test multivarié, des tailles d'effet, des différences observées et de la structure générale du problème.
+
+La simulation rend cette distinction particulièrement claire puisque l'intensité des différences a été choisie avant même de produire les données.
+
+## Même population, plusieurs analyses
+
+Un jeu de données généré pour la MANOVA peut aussi être utilisé pour d'autres analyses. Si les groupes diffèrent par leurs moyennes et partagent une covariance commune, ils constituent également un excellent scénario pour l'analyse discriminante linéaire.
+
+Cette proximité n'est pas accidentelle. MANOVA et analyse discriminante étudient toutes deux la séparation multivariée entre groupes, mais elles posent la question dans des directions différentes. La MANOVA demande essentiellement si les groupes diffèrent sur les variables, tandis que l'analyse discriminante cherche à utiliser ces variables pour comprendre ou prédire l'appartenance au groupe.
+
+Cette relation rend particulièrement utile l'utilisation du même jeu de données pour les deux méthodes.
+
+## Ce que la simulation permet de vérifier
+
+Après avoir effectué une MANOVA, il est possible de revenir aux paramètres de génération et de vérifier ce qui existait réellement dans la population.
+
+Si les moyennes factorielles étaient identiques, aucun effet multivarié systématique ne devrait être présent. Si elles différaient fortement, une séparation réelle existe. Si les covariances étaient également différentes, l'hypothèse d'homogénéité était volontairement violée.
+
+L'analyse n'est donc plus interprétée dans le vide. Chaque résultat peut être comparé à une réalité populationnelle connue.
+
+## Trois scénarios à conserver
+
+Pour travailler efficacement avec la MANOVA, trois conditions de base couvrent déjà une grande partie des situations pédagogiques.
+
+### Population de référence
+
+Utilisez plusieurs groupes de même taille, sans différence de moyennes et avec des covariances égales. Cette condition permet d'étudier les résultats lorsque l'hypothèse nulle est vraie.
+
+### Différence multivariée classique
+
+Introduisez des différences de moyennes modérées tout en conservant des covariances égales. Cette configuration représente le scénario classique dans lequel les groupes diffèrent par leur centre mais partagent la même structure de dispersion.
+
+### Différence multivariée avec hétérogénéité
+
+Conservez les différences de moyennes et introduisez des covariances différentes. Cette condition permet d'étudier simultanément la séparation entre groupes et la violation de l'hypothèse d'homogénéité.
+
+Ces trois scénarios peuvent ensuite être enrichis en modifiant les tailles de groupes, l'intensité des corrélations, le nombre de variables ou les caractéristiques distributionnelles.
+
+## Ce que la MANOVA simulée nous apprend
+
+La MANOVA ne doit pas être comprise comme une simple « ANOVA avec plusieurs variables dépendantes ». Elle étudie la position relative de plusieurs populations dans un espace multivarié dont la structure de covariance joue un rôle fondamental.
+
+Le générateur permet de construire cet espace de manière contrôlée. Les différences de moyennes factorielles produisent une séparation cohérente entre les groupes, tandis que la structure factorielle crée les corrélations entre variables. Les variations de covariance permettent ensuite de distinguer les situations conformes au modèle classique de celles où les groupes diffèrent également par leur dispersion.
+
+Cette manière de construire les données permet surtout de voir qu'une même population peut être interrogée sous plusieurs angles. La MANOVA demande si les groupes diffèrent. Le chapitre suivant posera une question complémentaire : **si les groupes diffèrent, dans quelle mesure pouvons-nous utiliser les variables pour reconnaître à quel groupe appartient une observation ?**
+
+Nous passerons ainsi naturellement de la comparaison multivariée à la **classification discriminante**, en distinguant les situations adaptées à la LDA de celles où la QDA devient plus pertinente.
+
+::: {.callout-note title="🖥️ Dans l'application"}
+- **Configurer → Groupes** : *Différences de moyennes latentes* règle l'effet que la MANOVA doit détecter; *Covariances entre groupes* règle le respect de l'homogénéité des covariances.
+- **Structure populationnelle → Structure des facteurs** : les moyennes latentes vraies, qui indiquent quels blocs d'items devraient différer.
+- **Données → Description par groupe** : moyennes observées et matrices de covariances de chaque groupe.
+- **Nouvel échantillon, même population** permet de répéter l'analyse sur plusieurs échantillons d'une population où l'hypothèse nulle est vraie ou fausse.
+:::
+
+## Laboratoire : une MANOVA dont on connaît la réponse {#sec-labo-7}
+
+Générez la population fil rouge avec **3** groupes de **200** personnes, des différences de moyennes latentes **modérées**, des covariances **identiques** et la graine **2024**. Exportez les données et réalisez une MANOVA des quinze items sur `Groupe`, puis trois ANOVA univariées pour `V1`, `V6` et `V11`.
+
+1. La MANOVA est-elle significative? Que valent la trace de Pillai et le lambda de Wilks?
+2. Quelles ANOVA univariées sont significatives? Pourquoi celle de `V11` ne l'est-elle pas?
+3. Une collègue en conclut que `V11` « ne sert à rien » dans la MANOVA. Qu'en pensez-vous?
+
+::: {.callout-tip title="Réponse" collapse="true"}
+1. Oui : Pillai = `r fr(pil[1, 2], 3)`, $F(`r pil[1, 4]`, `r pil[1, 5]`) = `r frm(pil[1, 3], 2)`$, `r pv(pil[1, 6])`; Wilks = `r fr(wil[1, 2], 3)`, `r pv(wil[1, 6])`. Les deux statistiques concordent, comme on l'attend dans une population à covariances égales.
+2. `V1` (item de `F1`, déplacé dans `G2`) : $F = `r frm(uni["F", 1], 2)`$, `r pv(uni["p", 1])`. `V6` (item de `F2`, déplacé dans `G3`) : $F = `r frm(uni["F", 2], 2)`$, `r pv(uni["p", 2])`. `V11` (item de `F3`) : $F = `r frm(uni["F", 3], 2)`$, `r pv(uni["p", 3])`. Aucun groupe n'est déplacé sur `F3` : les moyennes de ses items sont égales dans la population.
+3. Elle a raison sur les moyennes, mais `V11` n'est pas sans effet sur l'analyse : ses corrélations avec les autres items entrent dans la matrice de covariance intragroupe, et elle consomme des degrés de liberté. Ajouter des variables qui ne séparent pas les groupes réduit généralement un peu la puissance de la MANOVA.
+:::
+
+::: {.callout-important title="À retenir"}
+- La MANOVA teste l'égalité des **vecteurs** de moyennes; le générateur crée ces différences au niveau latent.
+- Une différence latente touche tous les items du facteur déplacé, proportionnellement à leurs charges.
+- La puissance dépend de la taille de l'effet **et** de la taille des groupes; sous l'hypothèse nulle, environ 5 % des échantillons sont significatifs.
+- Des covariances hétérogènes avec des groupes inégaux faussent le taux d'erreur; Pillai y résiste mieux que Wilks.
+- La MANOVA ne détecte pas une différence portant uniquement sur les covariances.
+:::
+
+## Erreurs fréquentes
+
+| Erreur | Ce qu'il faut retenir |
+|---|---|
+| Conclure à des populations identiques après une MANOVA non significative | La MANOVA ne teste que les moyennes; deux populations peuvent différer uniquement par leur covariance |
+| Confondre signification statistique et taille d'effet | Un grand échantillon peut rendre significative une différence populationnelle négligeable |
+| Traiter un résultat significatif isolé comme une découverte | Sous l'hypothèse nulle vraie, une proportion des simulations sera significative par simple erreur de type I |
+| Croire que plus de variables signifie toujours plus d'information | Des variables redondantes chargées sur le même facteur ajoutent peu de dimensions informatives nouvelles |
+| Utiliser le test de Box comme verdict automatique | C'est un diagnostic sensible à la normalité et à la taille d'échantillon, à interpréter avec d'autres indices |
+
+## Quiz
+
+::: {.callout-note title="Question 1 — numérique" collapse="true"}
+Dans une population de référence où l'hypothèse nulle est vraie, vous répétez la simulation et la MANOVA 200 fois avec un seuil $\alpha = 0{,}05$. Combien de résultats significatifs attendez-vous en moyenne, uniquement par erreur de première espèce?
+
+**Réponse : 10.** $200 \times 0{,}05 = 10$ résultats significatifs attendus en moyenne, même si aucune différence populationnelle n'existe.
+:::
+
+::: {.callout-note title="Question 2 — vrai ou faux" collapse="true"}
+Vrai ou faux : deux groupes peuvent posséder exactement le même vecteur de moyennes tout en étant des populations multivariées très différentes.
+
+**Réponse : Vrai.** Ils peuvent différer par leur matrice de covariance — leur dispersion et l'orientation de leurs relations — sans différer par leur centre.
+:::
+
+::: {.callout-note title="Question 3 — vrai ou faux" collapse="true"}
+Vrai ou faux : une MANOVA peut demeurer non significative même lorsque les moyennes multivariées diffèrent réellement dans la population, en particulier si l'échantillon est petit.
+
+**Réponse : Vrai.** C'est une question de puissance statistique : un effet réel mais modeste, combiné à un petit échantillon, peut ne pas atteindre le seuil de signification.
+:::
+
+::: {.callout-note title="Question 4 — diagnostic de scénario" collapse="true"}
+Vous générez trois groupes avec des différences de moyennes fortes, mais aussi des différences de covariance marquées (option « Variations fortes »). Une MANOVA basée sur le lambda de Wilks est-elle appropriée sans réserve? Que devriez-vous vérifier et que pourriez-vous faire différemment?
+
+**Réponse :** L'hypothèse d'homogénéité des covariances étant explicitement violée dans cette population, il faut interpréter les résultats avec prudence. Il est utile de vérifier les matrices de covariance par groupe (test de Box, en gardant à l'esprit sa sensibilité à la normalité et à la taille d'échantillon) et de privilégier une statistique reconnue pour sa robustesse relative à ce type de violation, comme la trace de Pillai, plutôt que de se fier uniquement à Wilks. La MANOVA reste utilisable pour tester les différences de moyennes, mais son hypothèse structurelle n'est plus parfaitement respectée — une bonne occasion, aussi, de considérer QDA plutôt que LDA si l'objectif se déplace vers la classification.
+:::

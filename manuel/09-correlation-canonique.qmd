@@ -1,0 +1,503 @@
+# Générer des données pour la corrélation canonique {#sec-canonique}
+
+```{r}
+#| include: false
+source("_common.R")
+rc_pop <- function(S, ix, iy) {
+  M <- solve(S[ix, ix]) %*% S[ix, iy] %*% solve(S[iy, iy]) %*% S[iy, ix]
+  sqrt(max(Re(eigen(M)$values)))
+}
+coefH <- function(l) { a <- sum(l^2 / (1 - l^2)); a / (1 + a) }
+cc4 <- generer(2024, nfact = 2, vpf = 5L, fc = 0.40, pl = "H")
+cc0 <- generer(2024, nfact = 2, vpf = 5L, fc = 0, pl = "H")
+can4 <- cancor(cc4$response[, 1:5], cc4$response[, 6:10])
+can0 <- cancor(cc0$response[, 1:5], cc0$response[, 6:10])
+rc4 <- rc_pop(cc4$population_correlation, 1:5, 6:10)
+# corrélations de structure : items X avec U1
+U1 <- scale(cc4$response[, 1:5], scale = FALSE) %*% can4$xcoef[, 1]
+struct_x <- cor(cc4$response[, 1:5], U1)[, 1]
+struct_x <- struct_x * sign(mean(struct_x))
+```
+
+::: {.callout-tip title="Objectifs d'apprentissage"}
+À la fin de ce chapitre, vous devriez être capable de :
+
+- formuler la définition de la première corrélation canonique comme la corrélation maximale entre une combinaison linéaire d'un premier bloc de variables et une combinaison linéaire d'un second;
+- expliquer comment construire deux blocs de variables reliés à partir de facteurs corrélés dans le générateur, et pourquoi ces blocs ne sont pas enregistrés comme catégories dans les données exportées;
+- distinguer la corrélation entre deux facteurs latents de la corrélation canonique observée entre les blocs, et nommer les éléments qui font diverger les deux;
+- expliquer pourquoi une corrélation canonique substantielle peut apparaître même lorsque les deux ensembles sont indépendants dans la population, et décrire le scénario qui sert de condition de référence;
+- distinguer la corrélation canonique, les corrélations de structure et les indices de redondance.
+:::
+
+::: {.callout-important title="Idée centrale"}
+La corrélation canonique observée n'est pas la corrélation entre deux facteurs latents : c'est la relation entre deux combinaisons **optimisées** de variables imparfaites, mesurées avec des charges limitées, des composantes résiduelles et une fluctuation d'échantillonnage. Sa valeur doit donc toujours être interprétée en tenant compte de ces sources d'écart, jamais comme un miroir direct de la relation populationnelle entre facteurs.
+:::
+
+::: {.callout-warning title="Pièges classiques"}
+- Confondre la corrélation canonique observée avec la corrélation entre les facteurs latents ayant servi à générer les blocs : elles ne mesurent pas le même objet.
+- Interpréter une forte corrélation canonique comme une preuve que toutes les variables des deux ensembles sont fortement reliées entre elles, alors qu'il s'agit d'une relation entre deux combinaisons optimisées, pas d'une relation globale.
+- Oublier que la procédure trouve presque toujours une corrélation canonique non nulle dans un échantillon, même entre blocs indépendants dans la population, simplement parce qu'elle optimise sur les données disponibles.
+- Se fier uniquement à un test de signification sans examiner les corrélations de structure et les indices de redondance, qui renseignent sur ce que la relation représente réellement.
+- Définir les blocs $\mathbf{X}$ et $\mathbf{Y}$ sans avoir consulté l'onglet **Structure populationnelle**, au risque de mélanger des facteurs non reliés ou de scinder artificiellement un même facteur entre les deux blocs.
+:::
+
+La corrélation canonique [@Hotelling1936] s'intéresse à une situation différente de celles rencontrées dans les chapitres précédents. Il n'y a plus nécessairement de groupes à comparer ou à prédire. Les variables sont plutôt organisées en deux ensembles, et l'objectif consiste à déterminer dans quelle mesure une combinaison des variables du premier ensemble peut être reliée à une combinaison des variables du second.
+
+Le générateur ne possède pas un contrôle intitulé « corrélation canonique ». Il n'en a pas besoin. En construisant plusieurs facteurs corrélés et en associant différents ensembles de variables à ces facteurs, il est possible de produire naturellement des blocs de variables possédant une structure de relations connue. Le modèle factoriel devient ainsi, une fois encore, un mécanisme de génération plutôt que l'objet de l'analyse.
+
+## Deux ensembles de variables
+
+Supposons que les variables soient séparées en deux ensembles. Le premier contient $p$ variables :
+
+$$
+\mathbf{X}
+=
+(X_1,X_2,\ldots,X_p)^{\mathsf T},
+$$
+
+et le second contient $q$ variables :
+
+$$
+\mathbf{Y}
+=
+(Y_1,Y_2,\ldots,Y_q)^{\mathsf T}.
+$$
+
+Dans une application réelle, ces ensembles peuvent représenter deux familles conceptuellement distinctes de mesures. Un premier bloc pourrait, par exemple, contenir des caractéristiques cognitives et un second des indicateurs de performance académique. Dans un autre contexte, on pourrait mettre en relation des caractéristiques sociales et un ensemble d'attitudes.
+
+La question n'est pas de prédire une seule variable $Y$ à partir de plusieurs variables $X$. La corrélation canonique traite les deux ensembles de manière multivariée et cherche les combinaisons de variables qui présentent la relation la plus forte entre eux.
+
+## Construire deux variables canoniques
+
+La première variable canonique du bloc $\mathbf{X}$ est une combinaison linéaire :
+
+$$
+U_1
+=
+a_1X_1+a_2X_2+\cdots+a_pX_p.
+$$
+
+De la même manière, le second ensemble fournit :
+
+$$
+V_1
+=
+b_1Y_1+b_2Y_2+\cdots+b_qY_q.
+$$
+
+Les coefficients sont choisis afin de maximiser :
+
+$$
+\rho_1
+=
+\operatorname{Cor}(U_1,V_1).
+$$
+
+Cette valeur est la **première corrélation canonique**. Elle représente la relation maximale pouvant être obtenue entre une combinaison linéaire des variables du premier ensemble et une combinaison linéaire des variables du second.
+
+Une fois cette première relation extraite, une deuxième paire de variables canoniques peut être recherchée sous certaines contraintes d'indépendance par rapport aux précédentes. Le processus peut se poursuivre jusqu'au nombre maximal de fonctions canoniques permis par les dimensions des deux ensembles :
+
+$$
+s=\min(p,q).
+$$
+
+Toutes ces fonctions ne sont cependant pas nécessairement substantiellement importantes.
+
+## Comment produire les deux blocs avec le générateur
+
+La structure factorielle fournit une manière simple de créer deux ensembles reliés. Supposons que deux facteurs soient générés :
+
+$$
+F_1
+\qquad\text{et}\qquad
+F_2.
+$$
+
+Les variables principalement associées à $F_1$ peuvent constituer le premier bloc, tandis que celles principalement associées à $F_2$ constituent le second. Si les deux facteurs sont corrélés, leurs indicateurs le seront également.
+
+On obtient alors une organisation générale de la forme :
+
+$$
+\mathbf{X}
+\longleftarrow
+F_1
+\longleftrightarrow
+F_2
+\longrightarrow
+\mathbf{Y}.
+$$
+
+La relation entre les deux ensembles observés n'a pas été créée arbitrairement variable par variable. Elle résulte d'une relation populationnelle connue entre deux dimensions latentes.
+
+## Générer un jeu approprié avec MultvarGen
+
+Pour un premier exercice, choisissez **2** facteurs et **Fixe — 5** variables par facteur. Dans **Corrélations et charges**, fixez la corrélation entre facteurs à **0,40**, sélectionnez des charges principales **élevées (0,65–0,80)** et des charges secondaires **aucune (0)**. Générez un seul groupe de **500** personnes avec une distribution **normale** et des réponses **continues**.
+
+Après l'exportation, formez le bloc $\mathbf{X}$ avec les cinq indicateurs du premier facteur et le bloc $\mathbf{Y}$ avec les cinq indicateurs du second. Les noms et la composition des blocs doivent être confirmés dans **Structure populationnelle** avant l'analyse; ils ne sont pas ajoutés automatiquement au fichier de données. La première corrélation canonique devrait être nettement positive, sans être identique à 0,40, puisque les indicateurs ne mesurent pas parfaitement les facteurs. Pour une condition de référence, conservez tous les réglages et fixez plutôt la corrélation factorielle à **0**.
+
+## Un scénario simple à deux facteurs
+
+Une première simulation peut comprendre deux facteurs et cinq variables principales par facteur. Les variables associées au premier facteur forment le bloc $\mathbf{X}$ et celles associées au second constituent le bloc $\mathbf{Y}$.
+
+On choisit des charges principales relativement fortes, aucune charge secondaire et une corrélation modérée entre les deux facteurs. Un échantillon de plusieurs centaines d'observations fournit un bon point de départ pour observer la structure.
+
+Dans ce scénario, les variables appartenant à un même bloc sont reliées parce qu'elles partagent leur facteur principal. Les relations entre les deux blocs proviennent principalement de la corrélation entre $F_1$ et $F_2$. La première corrélation canonique devrait donc capter une partie importante de cette relation.
+
+::: {.callout-tip title="Un scénario de départ"}
+Utilisez deux facteurs, plusieurs bons indicateurs par facteur, aucune charge secondaire et une corrélation factorielle modérée. Après l'exportation, utilisez les indicateurs du premier facteur comme bloc $\mathbf{X}$ et ceux du second comme bloc $\mathbf{Y}$.
+:::
+
+## Faire varier la relation entre les ensembles
+
+Une expérience particulièrement claire consiste à conserver exactement la même structure de charges tout en faisant varier la corrélation entre les facteurs.
+
+Si :
+
+$$
+\rho_{F_1F_2}
+\approx 0,
+$$
+
+les deux dimensions latentes sont pratiquement indépendantes. Les relations entre les indicateurs appartenant aux deux blocs devraient alors être faibles et la corrélation canonique populationnelle correspondante devrait elle aussi être limitée.
+
+Si la corrélation factorielle devient modérée ou forte, les relations entre les blocs augmentent. La première corrélation canonique devrait alors refléter cette augmentation.
+
+Cette expérience montre que la corrélation canonique ne crée pas une relation entre deux ensembles. Elle cherche une combinaison de variables permettant de représenter le plus efficacement possible une relation déjà présente dans leur structure de covariance.
+
+## Pourquoi la corrélation canonique n'est pas simplement la corrélation entre deux facteurs
+
+Dans le scénario le plus simple, la relation entre les deux blocs provient largement de la corrélation entre leurs facteurs principaux. La corrélation canonique observée ne doit cependant pas être confondue avec cette corrélation factorielle.
+
+Les variables observées contiennent également des composantes résiduelles. Elles ne mesurent donc pas parfaitement les facteurs latents. La force des charges, le nombre d'indicateurs, les charges secondaires éventuelles et la fluctuation d'échantillonnage influencent la relation obtenue entre les combinaisons observées.
+
+La corrélation entre $F_1$ et $F_2$ appartient à la population latente génératrice. La corrélation canonique est, elle, calculée à partir des variables observées. La comparaison des deux est informative précisément parce qu'elles ne représentent pas le même objet.
+
+### La corrélation canonique de la population
+
+Puisque le générateur connaît $\boldsymbol{\Sigma}$, on peut calculer la corrélation canonique **populationnelle**, celle qu'on obtiendrait avec un échantillon infini. Lorsque chaque bloc mesure un seul facteur, sans charges secondaires, elle prend une forme simple :
+
+$$
+\rho_{c} = \rho_{F_1F_2}\,\sqrt{H_X\,H_Y},
+\qquad
+H = \frac{\sum_j \lambda_j^2/(1-\lambda_j^2)}{1+\sum_j \lambda_j^2/(1-\lambda_j^2)},
+$$
+
+où $H$ est la **fiabilité maximale** de la meilleure combinaison pondérée des items d'un bloc. La corrélation canonique est donc la corrélation latente **atténuée** par l'imperfection des mesures. Pour le scénario de départ (charges élevées, $\rho_{F_1F_2} = 0{,}40$, graine 2024), $H_X = `r frm(coefH(cc4$loadings[1:5, 1]))`$, $H_Y = `r frm(coefH(cc4$loadings[6:10, 2]))`$ et $\rho_c = `r frm(rc4)`$.
+
+```{r}
+#| label: tbl-canonique-pop
+#| tbl-cap: "Corrélation canonique populationnelle entre deux blocs de cinq items, pour une corrélation latente de 0,40, selon le niveau des charges principales (graine 2024)."
+niv <- c(L = "Faibles (0,35-0,50)", M = "Moyennes (0,50-0,65)", H = "Élevées (0,65-0,80)")
+tc <- do.call(rbind, lapply(names(niv), function(k) {
+  d <- generer(2024, nfact = 2, vpf = 5L, fc = 0.40, pl = k)
+  data.frame(Charges = niv[[k]], `H (bloc X)` = coefH(d$loadings[1:5, 1]),
+             `H (bloc Y)` = coefH(d$loadings[6:10, 2]),
+             `ρ canonique` = rc_pop(d$population_correlation, 1:5, 6:10), check.names = FALSE)
+}))
+tab_fr(tc, 3)
+```
+
+## Le rôle des charges factorielles
+
+Des charges principales élevées produisent des variables qui représentent plus fortement leurs facteurs. Les blocs observés transmettent alors plus clairement la relation existant entre les dimensions latentes.
+
+Lorsque les charges sont plus faibles, une plus grande partie de la variance des variables est résiduelle. Le signal commun devient moins dominant et la relation entre les deux ensembles peut être plus difficile à récupérer.
+
+On peut donc maintenir constante la corrélation entre les facteurs tout en modifiant l'intensité des charges principales. Cette expérience permet de distinguer la force de la relation latente de la qualité avec laquelle les variables observées représentent cette relation.
+
+## Le rôle du nombre d'indicateurs
+
+Plusieurs indicateurs peuvent permettre à une combinaison canonique de représenter plus efficacement une dimension commune qu'une seule variable prise isolément. C'est précisément l'un des intérêts d'une méthode multivariée : elle peut combiner l'information partagée par plusieurs mesures.
+
+Ajouter des variables n'est toutefois pas automatiquement bénéfique. Si les nouvelles variables sont de très mauvais indicateurs ou contiennent surtout de la variation résiduelle, elles peuvent ajouter peu d'information utile tout en augmentant la complexité de l'estimation.
+
+Le générateur permet d'examiner cette distinction en faisant varier le nombre de variables par facteur tout en maintenant la structure latente générale relativement stable.
+
+## Les charges secondaires
+
+L'interprétation est particulièrement simple lorsque chaque variable appartient clairement à l'un des deux blocs et possède peu ou pas de charge sur l'autre facteur. La distinction entre les ensembles $\mathbf{X}$ et $\mathbf{Y}$ correspond alors assez directement à la structure populationnelle.
+
+L'introduction de charges secondaires rend cette organisation moins pure. Une variable placée dans le bloc $\mathbf{X}$ peut alors contenir directement une partie de la variance associée au facteur principalement représenté dans le bloc $\mathbf{Y}$. Les relations entre ensembles ne passent donc plus exclusivement par la corrélation entre leurs facteurs principaux.
+
+Ce scénario peut être très instructif, mais il faut l'interpréter correctement. Une forte corrélation canonique peut provenir à la fois des relations entre facteurs et du fait que certaines variables partagent directement plusieurs dimensions latentes.
+
+## Une seule relation latente dominante
+
+Le scénario à deux facteurs crée essentiellement une relation dominante entre les deux blocs. Il est donc particulièrement approprié pour étudier la première fonction canonique.
+
+On s'attend à ce que cette première fonction concentre l'essentiel de la relation systématique entre les ensembles. Les fonctions suivantes peuvent surtout refléter des aspects secondaires de la covariance ou la fluctuation d'échantillonnage.
+
+Cette situation constitue un bon point de départ pédagogique parce que la structure populationnelle possède une interprétation claire : deux dimensions latentes reliées produisent deux ensembles de variables reliés.
+
+## Plusieurs relations canoniques
+
+La situation devient plus riche lorsque plusieurs dimensions latentes participent aux deux ensembles. On peut alors construire des blocs comportant plusieurs sources de variation commune et obtenir plus d'une relation canonique substantielle.
+
+Le générateur actuel ne permet toutefois pas de définir explicitement deux blocs de variables indépendamment de l'organisation des facteurs. Il faut donc construire ce type de scénario à partir de la structure factorielle disponible et décider, après génération, quelles variables seront placées dans chacun des deux ensembles.
+
+Cette souplesse est suffisante pour plusieurs exercices, mais elle impose une règle importante : il faut examiner la matrice des charges populationnelles avant de définir les blocs. La composition de $\mathbf{X}$ et de $\mathbf{Y}$ doit correspondre au scénario que l'on souhaite étudier.
+
+## Un scénario à quatre facteurs
+
+Une extension possible consiste à générer quatre facteurs et à considérer les indicateurs de $F_1$ et $F_2$ comme un premier ensemble, tandis que ceux de $F_3$ et $F_4$ constituent le second.
+
+Si certaines corrélations factorielles relient les facteurs des deux ensembles, plusieurs dimensions de relation peuvent être présentes. La corrélation canonique cherche alors successivement les combinaisons qui représentent ces relations.
+
+Ce scénario est plus complexe que le cas à deux facteurs et son interprétation exige davantage d'attention. Il devient particulièrement important d'examiner les coefficients canoniques et les corrélations entre variables originales et variables canoniques plutôt que de regarder seulement la valeur des corrélations canoniques.
+
+## Coefficients canoniques et contributions des variables
+
+Les coefficients $a_j$ et $b_j$ déterminent les combinaisons linéaires formant les variables canoniques. Ils peuvent donner des indications sur le rôle des variables, mais leur interprétation peut être délicate lorsque les variables d'un même ensemble sont fortement corrélées.
+
+Comme en régression multiple, un coefficient dépend des autres variables présentes dans l'équation. Deux variables très redondantes peuvent donc avoir des coefficients instables même si elles sont toutes deux fortement reliées à la dimension canonique.
+
+Il est généralement utile de compléter l'examen des coefficients par celui des corrélations entre les variables originales et les variables canoniques.
+
+## Les corrélations de structure
+
+Pour une variable $X_j$, on peut examiner :
+
+$$
+\operatorname{Cor}(X_j,U_k),
+$$
+
+c'est-à-dire sa corrélation avec la variable canonique de son propre ensemble. De même, pour le second bloc :
+
+$$
+\operatorname{Cor}(Y_j,V_k).
+$$
+
+Ces corrélations, souvent appelées **corrélations de structure** ou *canonical loadings*, indiquent dans quelle mesure chaque variable est associée à la dimension canonique correspondante.
+
+Dans une simulation factorielle simple, les variables fortement chargées sur le facteur qui produit la relation entre les blocs devraient généralement présenter des corrélations de structure importantes sur la première fonction canonique.
+
+Cette comparaison est particulièrement intéressante parce que la matrice de charges populationnelles fournit un point de référence permettant de comprendre pourquoi certaines variables contribuent davantage à la relation canonique.
+
+## Les corrélations croisées
+
+On peut également examiner la relation entre une variable d'un ensemble et la variable canonique de l'autre :
+
+$$
+\operatorname{Cor}(X_j,V_k)
+$$
+
+ou :
+
+$$
+\operatorname{Cor}(Y_j,U_k).
+$$
+
+Ces corrélations croisées renseignent sur la manière dont les variables d'un bloc sont reliées à la combinaison construite dans l'autre.
+
+Elles permettent de dépasser une interprétation limitée à la valeur globale de la corrélation canonique et de comprendre quelles variables portent réellement la relation entre les ensembles.
+
+## La redondance
+
+Une corrélation canonique élevée ne signifie pas nécessairement qu'une grande proportion de la variance d'un ensemble peut être expliquée par l'autre.
+
+La corrélation canonique mesure la relation entre deux **combinaisons optimisées**. Ces combinaisons peuvent être fortement corrélées tout en ne représentant qu'une portion relativement limitée de la variance totale des variables originales.
+
+Les indices de redondance cherchent précisément à compléter l'information fournie par la corrélation canonique. Ils évaluent dans quelle mesure la variance d'un ensemble est représentée par sa variable canonique et peut être associée à l'autre ensemble.
+
+Cette distinction évite de conclure trop rapidement qu'une forte corrélation canonique implique une relation globale très importante entre tous les éléments des deux blocs.
+
+## Taille de l'échantillon
+
+La corrélation canonique estime plusieurs ensembles de coefficients à partir de matrices de covariance. Comme pour les autres méthodes multivariées, la stabilité des résultats dépend donc de la quantité d'information disponible relativement au nombre de variables.
+
+Avec de petits échantillons et de nombreux prédicteurs dans chaque bloc, les corrélations canoniques observées peuvent être instables ou surestimer les relations qui se reproduiraient dans un nouvel échantillon.
+
+Une expérience simple consiste à conserver exactement la même population et à comparer, par exemple, des échantillons de 100, 300 et 1000 observations. La structure populationnelle ne change pas, mais les coefficients et les corrélations canoniques devraient devenir plus stables à mesure que l'échantillon augmente.
+
+## Une corrélation canonique peut apparaître par hasard
+
+Même lorsque les deux ensembles sont indépendants dans la population, la procédure cherche les combinaisons qui maximisent leur relation dans l'échantillon. Elle trouvera donc presque toujours une corrélation canonique non nulle.
+
+Avec beaucoup de variables et peu d'observations, cette optimisation peut produire une relation apparemment impressionnante simplement en exploitant la fluctuation d'échantillonnage.
+
+```{r}
+#| label: fig-canonique-biais
+#| cache: true
+#| fig-cap: "Première corrélation canonique observée entre deux blocs de cinq items selon la taille de l'échantillon (charges élevées, graine 2024; 300 échantillons par point; médiane et intervalle contenant 90 % des échantillons). Les traits pointillés marquent les valeurs populationnelles : 0 pour des facteurs indépendants, ρc pour une corrélation latente de 0,40."
+#| fig-height: 3.4
+set.seed(91)
+cb <- do.call(rbind, lapply(list(list("ρ latente = 0", cc0), list("ρ latente = 0,40", cc4)), function(x) {
+  S <- x[[2]]$population_correlation
+  do.call(rbind, lapply(c(30, 60, 100, 200, 500, 1000), function(n) {
+    v <- replicate(300, { Y <- MASS::mvrnorm(n, rep(0, 10), S); cancor(Y[, 1:5], Y[, 6:10])$cor[1] })
+    data.frame(cond = x[[1]], n = n, med = median(v), bas = quantile(v, 0.05), haut = quantile(v, 0.95))
+  }))
+}))
+ggplot(cb, aes(n, med, colour = cond, fill = cond)) +
+  geom_ribbon(aes(ymin = bas, ymax = haut), alpha = 0.18, colour = NA) +
+  geom_line(linewidth = 1.05) + geom_point(size = 2) +
+  geom_hline(yintercept = c(0, rc4), linetype = "dashed", colour = c(pal$orange, pal$bleu)) +
+  scale_x_log10(breaks = c(30, 60, 100, 200, 500, 1000)) +
+  scale_colour_manual(values = c(pal$orange, pal$bleu), name = NULL) +
+  scale_fill_manual(values = c(pal$orange, pal$bleu), name = NULL) +
+  scale_y_continuous(labels = axe_fr) +
+  labs(x = "Taille de l'échantillon (échelle logarithmique)", y = "Première corrélation canonique")
+```
+
+Avec 30 personnes et deux blocs **indépendants**, la première corrélation canonique observée vaut typiquement `r fr(cb$med[cb$cond == "ρ latente = 0" & cb$n == 30], 2)`. Le biais diminue avec la taille de l'échantillon, mais il ne disparaît jamais tout à fait, puisque la corrélation canonique est toujours positive.
+
+Le scénario où les facteurs des deux blocs sont indépendants constitue donc une condition de référence très utile. Il permet de voir ce que la méthode peut produire lorsqu'aucune relation populationnelle substantielle n'a été introduite.
+
+::: {.callout-note title="Maximiser n'est pas confirmer"}
+La première corrélation canonique est construite pour être aussi grande que possible dans l'échantillon. Sa valeur doit donc être évaluée en tenant compte de l'échantillonnage, de la dimension du problème et de la possibilité de généralisation à de nouvelles données.
+:::
+
+## Tester les fonctions canoniques
+
+Les procédures classiques de corrélation canonique permettent de tester si l'ensemble des corrélations canoniques restantes est compatible avec l'absence de relation entre les deux ensembles.
+
+L'analyse procède généralement de manière séquentielle. On évalue d'abord l'ensemble des fonctions, puis les fonctions restantes après retrait de la première, et ainsi de suite.
+
+Cette logique permet de déterminer combien de dimensions canoniques apportent une information substantielle. Comme toujours, la signification statistique doit être accompagnée d'une interprétation de la taille des relations et de la structure des variables.
+
+Dans une simulation, cette interprétation bénéficie d'un avantage supplémentaire : nous savons combien de relations latentes ont été introduites dans la population.
+
+## Normalité et asymétrie
+
+La théorie classique de l'inférence en corrélation canonique repose sur certaines hypothèses distributionnelles. Les distributions asymétriques permettent donc de construire des scénarios moins favorables que la condition normale de référence.
+
+On peut conserver la même organisation factorielle et la même intensité de relation entre les facteurs tout en modifiant la distribution des variables. Les différences observées dans les résultats peuvent alors être reliées à cette modification plutôt qu'à un changement de structure latente.
+
+Comme dans les chapitres précédents, l'intérêt principal n'est pas de chercher un seuil universel de robustesse. Il consiste à comprendre comment plusieurs caractéristiques de la population interagissent avec la méthode d'analyse.
+
+## Un premier scénario : ensembles indépendants
+
+Générez deux facteurs avec plusieurs indicateurs chacun, sans charge secondaire et avec une relation factorielle nulle ou très faible. Utilisez ensuite les indicateurs du premier facteur comme bloc $\mathbf{X}$ et ceux du second comme bloc $\mathbf{Y}$.
+
+Cette population contient peu d'information systématique reliant les deux ensembles. Une corrélation canonique observée peut néanmoins apparaître en raison de la fluctuation d'échantillonnage, surtout si l'échantillon est petit.
+
+Ce scénario fournit la condition de référence nécessaire pour comprendre les simulations suivantes.
+
+## Un deuxième scénario : relation modérée
+
+Conservez exactement la même structure, mais introduisez une corrélation modérée entre les deux facteurs.
+
+Les deux ensembles sont maintenant reliés par une source populationnelle connue. La première fonction canonique devrait capter une partie importante de cette relation et les indicateurs les plus fortement associés à leurs facteurs devraient jouer un rôle important dans les variables canoniques.
+
+On peut ensuite comparer les corrélations de structure à la matrice de charges populationnelles pour comprendre pourquoi certaines variables représentent mieux la relation que d'autres.
+
+## Un troisième scénario : mesure moins précise
+
+Conservez la même corrélation entre facteurs, mais diminuez l'intensité des charges principales.
+
+La relation latente est inchangée, mais les variables observées représentent moins précisément les facteurs. La relation entre les deux blocs devrait donc être plus difficile à récupérer.
+
+Ce scénario permet de distinguer clairement **la force d'une relation entre construits** de **la qualité des mesures utilisées pour les représenter**.
+
+## Un quatrième scénario : structure moins pure
+
+On peut finalement introduire des charges secondaires. Les deux ensembles ne correspondent plus aussi proprement à deux dimensions distinctes et certaines variables partagent directement plusieurs sources latentes de variation.
+
+La corrélation canonique peut alors demeurer élevée, voire augmenter, mais son interprétation devient plus complexe. Une relation forte entre les blocs ne signifie plus nécessairement qu'elle représente seulement la corrélation entre deux facteurs clairement séparés.
+
+Cette expérience montre que la qualité d'une interprétation multivariée dépend non seulement de la taille des coefficients obtenus, mais aussi de la structure des variables qui les produisent.
+
+## Définir les blocs après la génération
+
+Contrairement aux groupes, les blocs $\mathbf{X}$ et $\mathbf{Y}$ ne sont pas enregistrés comme catégories particulières dans le fichier exporté. Ils sont définis au moment de l'analyse à partir des variables générées.
+
+Il faut donc noter quelles variables appartiennent aux facteurs que l'on souhaite associer à chaque bloc. L'onglet **Structure populationnelle** fournit précisément cette information.
+
+Dans un scénario simple, les indicateurs du premier facteur peuvent former $\mathbf{X}$ et ceux du second $\mathbf{Y}$. Dans une structure plus complexe, plusieurs facteurs peuvent être réunis dans chacun des ensembles.
+
+Cette étape illustre bien la généralité du générateur : il produit une population multivariée structurée, mais c'est la question analytique qui détermine ensuite le rôle attribué aux différentes variables.
+
+## Corrélation canonique et régression multiple
+
+La corrélation canonique peut être considérée comme une généralisation de la régression multiple. En régression, plusieurs variables $X$ sont utilisées pour expliquer une seule variable $Y$. En corrélation canonique, plusieurs variables d'un ensemble sont mises en relation avec plusieurs variables d'un autre ensemble.
+
+La symétrie est donc plus grande. Aucun des deux blocs n'est nécessairement traité comme une réponse unique à expliquer.
+
+Cette perspective permet de situer la corrélation canonique dans la famille des méthodes multivariées : elle étudie les relations entre deux espaces de variables plutôt qu'une différence entre groupes ou une seule variable dépendante.
+
+## Une autre façon de généraliser le générateur
+
+Les chapitres précédents utilisaient la structure factorielle pour créer des groupes possédant des propriétés multivariées contrôlées. La MANOVA examinait leurs différences de moyennes; LDA et QDA utilisaient ces différences pour la classification.
+
+La corrélation canonique montre que les groupes ne sont pas nécessaires pour exploiter le même générateur. Les facteurs peuvent simplement servir à organiser les relations entre plusieurs familles de variables.
+
+Le principe devient donc beaucoup plus général :
+
+> définir une structure populationnelle possédant les propriétés nécessaires, générer un échantillon, puis choisir la méthode statistique correspondant à la question que l'on souhaite poser.
+
+## Ce que la corrélation canonique simulée nous apprend
+
+Une forte corrélation canonique ne signifie pas que toutes les variables de deux ensembles sont fortement reliées entre elles. Elle signifie qu'il existe des combinaisons linéaires des deux blocs présentant une relation importante.
+
+La simulation permet de connaître l'origine de cette relation. Elle peut provenir d'une corrélation entre facteurs, de plusieurs dimensions latentes reliées, de charges secondaires ou d'une combinaison de ces mécanismes. Elle permet aussi de voir comment la qualité des indicateurs et la taille de l'échantillon influencent la récupération de la relation.
+
+Le générateur n'est donc plus ici un générateur « pour l'analyse factorielle ». Le modèle factoriel constitue simplement une manière économique et contrôlable de construire une matrice de covariance multivariée possédant une structure connue.
+
+Avec l'AFE, la CFA, les analyses multigroupes, la MANOVA, la classification discriminante et maintenant la corrélation canonique, nous disposons de plusieurs façons d'utiliser la même architecture de simulation.
+
+Le prochain chapitre rassemblera ces possibilités dans un **catalogue de scénarios pratiques**. L'objectif ne sera plus d'expliquer une méthode particulière, mais de répondre directement à une question très concrète : **quels paramètres choisir dans l'application pour générer le type de données dont j'ai besoin ?**
+
+::: {.callout-note title="🖥️ Dans l'application"}
+- **Configurer → Charges et corrélations** : *Corrélation entre facteurs* fixe la relation latente entre les blocs; *Charges factorielles principales* fixe la qualité de leur mesure.
+- **Structure populationnelle → Structure des variables** : pour savoir quels items forment chaque bloc (colonne *Facteur principal*).
+- **Données → Description globale** : les corrélations entre items de blocs différents, avant l'analyse.
+- **Nouvel échantillon, même population** pour observer la variabilité de la corrélation canonique d'un échantillon à l'autre.
+:::
+
+## Laboratoire : une corrélation canonique atténuée {#sec-labo-9}
+
+Générez **2** facteurs, **Fixe — 5** variables, corrélation **Fixe — 0,40**, charges principales **Élevées**, aucune charge secondaire, un groupe de **500** personnes et la graine **2024**. Formez le bloc $\mathbf{X}$ avec `V1` à `V5` et le bloc $\mathbf{Y}$ avec `V6` à `V10`, puis réalisez une corrélation canonique.
+
+1. Que vaut la première corrélation canonique? Est-elle égale à 0,40?
+2. Que valent les corrélations de structure des items de $\mathbf{X}$?
+3. Refaites l'analyse après avoir fixé la corrélation entre facteurs à **0** (même graine). Que devient la première corrélation canonique?
+
+::: {.callout-tip title="Réponse" collapse="true"}
+1. $r_{c1} = `r frm(can4$cor[1])`$, plus petite que 0,40. La valeur populationnelle vaut $\rho_c = `r frm(rc4)`$ : la mesure imparfaite des facteurs atténue la relation, et l'échantillon ajoute un peu de fluctuation (et le léger biais vers le haut de toute corrélation maximisée).
+2. Les corrélations de structure valent `r paste(fr(struct_x, 2), collapse = "; ")` pour `V1` à `V5`. Elles sont toutes élevées : les cinq items participent à la relation, comme on l'attend de cinq bons indicateurs de $F_1$ (charges vraies : `r paste(fr(cc4$loadings[1:5, 1], 2), collapse = "; ")`). Leur ordre ne reproduit toutefois pas exactement celui des charges : les poids canoniques sont optimisés dans l'échantillon et en épousent les fluctuations.
+3. Avec des facteurs indépendants, $r_{c1} = `r frm(can0$cor[1])`$ alors que la valeur populationnelle est nulle. Avec 500 personnes, le biais est petit, mais il n'est pas nul : la procédure maximise toujours la corrélation dans l'échantillon.
+:::
+
+::: {.callout-important title="À retenir"}
+- La corrélation canonique relie deux combinaisons **optimisées** des blocs; elle n'est pas la corrélation entre les facteurs.
+- Dans la population, $\rho_c = \rho_{F_1F_2}\sqrt{H_X H_Y}$ pour deux blocs unidimensionnels : la qualité des mesures l'atténue.
+- Dans un échantillon, la première corrélation canonique est biaisée vers le haut, surtout avec peu de personnes et beaucoup d'items.
+- Les blocs se définissent après la génération, à partir de la structure populationnelle.
+- Corrélations de structure et redondance complètent l'interprétation [@StewartLove1968; @Thompson1984].
+:::
+
+## Erreurs fréquentes
+
+| Erreur | Ce qu'il faut retenir |
+|---|---|
+| Assimiler la corrélation canonique à la corrélation entre facteurs latents | Ce sont deux objets différents : l'un est populationnel et latent, l'autre est calculé sur des combinaisons observées imparfaites |
+| Croire qu'une forte corrélation canonique implique une forte relation entre toutes les variables des deux blocs | Elle ne décrit que la relation entre deux combinaisons optimisées, pas une relation globale |
+| Interpréter toute corrélation canonique non nulle comme une preuve de relation | Une relation apparente peut provenir uniquement de la fluctuation d'échantillonnage, même entre blocs indépendants |
+| Se fier seulement à la signification statistique | Les corrélations de structure et les indices de redondance sont nécessaires pour comprendre ce que représente la relation |
+| Définir les blocs sans consulter la structure populationnelle | Risque de scinder un même facteur entre les deux blocs ou de mélanger des facteurs non reliés |
+
+## Quiz
+
+::: {.callout-note title="Question 1 — numérique" collapse="true"}
+Le bloc $\mathbf{X}$ comporte 7 variables et le bloc $\mathbf{Y}$ en comporte 4. Quel est le nombre maximal de fonctions canoniques que l'analyse peut extraire?
+
+**Réponse : 4.** $s = \min(p,q) = \min(7,4) = 4$.
+:::
+
+::: {.callout-note title="Question 2 — vrai ou faux" collapse="true"}
+Vrai ou faux : si les deux facteurs générateurs sont parfaitement indépendants dans la population ($\rho_{F_1F_2}=0$), la première corrélation canonique calculée sur un échantillon sera toujours exactement égale à zéro.
+
+**Réponse : Faux.** La procédure optimise les combinaisons linéaires pour maximiser la corrélation dans l'échantillon; elle trouvera presque toujours une valeur non nulle, particulièrement avec peu d'observations, uniquement en raison de la fluctuation d'échantillonnage.
+:::
+
+::: {.callout-note title="Question 3 — vrai ou faux" collapse="true"}
+Vrai ou faux : la corrélation canonique et la corrélation entre les deux facteurs latents générateurs mesurent exactement la même quantité.
+
+**Réponse : Faux.** La corrélation canonique porte sur des combinaisons de variables observées, imparfaites en raison des charges limitées et des composantes résiduelles; elle est généralement atténuée par rapport à la corrélation factorielle populationnelle.
+:::
+
+::: {.callout-note title="Question 4 — diagnostic de scénario" collapse="true"}
+Vous générez deux facteurs avec une corrélation forte ($\rho_{F_1F_2}=0{,}70$) mais des charges principales **Faibles**. Après analyse, vous obtenez une première corrélation canonique de $0{,}35$, nettement inférieure à $0{,}70$. Est-ce surprenant? Qu'est-ce qui explique probablement cet écart, et comment pourriez-vous le vérifier expérimentalement?
+
+**Réponse :** Ce n'est pas surprenant. Des charges principales faibles signifient que les variables observées représentent imparfaitement leurs facteurs latents — une grande partie de leur variance est résiduelle plutôt que commune. La combinaison canonique, construite à partir de ces indicateurs peu informatifs, ne peut donc pas retrouver toute la force de la relation latente : elle est atténuée. Pour vérifier cette explication, on peut régénérer une population identique (même corrélation factorielle de $0{,}70$, même nombre de facteurs et d'indicateurs) mais avec des charges principales **Élevées** plutôt que Faibles, et observer si la première corrélation canonique se rapproche alors davantage de $0{,}70$.
+:::

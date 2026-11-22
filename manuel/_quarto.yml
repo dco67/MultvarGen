@@ -1,0 +1,92 @@
+project:
+  type: book
+  output-dir: _book
+
+lang: fr
+language:
+  crossref-fig-title: "Figure"
+  crossref-tbl-title: "Tableau"
+  crossref-fig-prefix: "figure"
+  crossref-tbl-prefix: "tableau"
+  crossref-eq-prefix: "équation"
+  crossref-ch-prefix: "chapitre"
+  crossref-sec-prefix: "section"
+  crossref-apx-prefix: "appendice"
+  section-title-appendices: "Appendices"
+  callout-tip-title: "Astuce"
+  callout-note-title: "Note"
+  callout-warning-title: "Attention"
+  callout-important-title: "Important"
+
+book:
+  title: "Générer des données multivariées"
+  subtitle: "Simulation factorielle, scénarios classiques et applications"
+  author: "Daniel Coulombe, Ph.D."
+  date: "2026"
+  search: true
+  page-navigation: true
+  downloads: [pdf, epub]
+  chapters:
+    - index.qmd
+    - 01-generateur.qmd
+    - 02-utiliser-application.qmd
+    - 03-population-echantillon.qmd
+    - 04-efa.qmd
+    - 05-cfa.qmd
+    - 06-multigroupes.qmd
+    - 07-manova.qmd
+    - 08-classification.qmd
+    - 09-correlation-canonique.qmd
+    - 10-scenarios.qmd
+    - glossaire.qmd
+  appendices:
+    - 99-appendice-generateur.qmd
+    - references.qmd
+
+bibliography: references.bib
+csl: apa.csl
+
+crossref:
+  chapters: true
+
+execute:
+  echo: false            # AUCUN code R visible dans tout le livre
+  warning: false
+  message: false
+  freeze: auto           # après édition de _common.R ou _moteur.R :
+                         # unlink("_freeze", recursive = TRUE) avant de rendre
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    dev: ragg_png
+    toc: true
+    toc-title: "Sur cette page"
+    number-sections: true
+    fig-align: center
+  pdf:
+    documentclass: scrreprt
+    papersize: letter
+    pdf-engine: lualatex
+    toc: true
+    toc-depth: 2
+    toc-title: "Table des matières"
+    number-sections: true
+    colorlinks: true
+    fig-align: center
+    keep-tex: false
+    include-in-header: preamble.tex
+    include-before-body: cover.tex
+    geometry:
+      - top=2.2cm
+      - bottom=2.2cm
+      - left=2.4cm
+      - right=2.4cm
+  epub:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    cover-image: cover.png
+    css: styles.css
+    dev: ragg_png

@@ -1,0 +1,673 @@
+# Générer des données pour la classification discriminante {#sec-classification}
+
+```{r}
+#| include: false
+source("_common.R")
+# Distance de Mahalanobis populationnelle entre G1 et G2 (covariances égales)
+D2_pop <- function(pop) {
+  L <- pop$loadings; S <- L %*% pop$group_factor_covariances$G1 %*% t(L) + diag(pop$uniquenesses)
+  dm <- L %*% (pop$factor_means[2, ] - pop$factor_means[1, ])
+  drop(t(dm) %*% solve(S) %*% dm)
+}
+tirer_groupes <- function(pop, n) {
+  L <- pop$loadings; Th <- diag(pop$uniquenesses); G <- length(pop$group_sizes)
+  n <- rep(n, length.out = G)
+  X <- do.call(rbind, lapply(seq_len(G), function(g)
+    MASS::mvrnorm(n[g], drop(L %*% pop$factor_means[g, ]),
+                  L %*% pop$group_factor_covariances[[g]] %*% t(L) + Th)))
+  list(X = X, g = factor(rep(paste0("G", seq_len(G)), times = n)))
+}
+pop_cl <- generer(2024, nfact = 2, vpf = 5L, group_sizes = c(300L, 300L), group_mean_diff = "high")
+D2_cl <- D2_pop(pop_cl)
+X_cl <- pop_cl$response; g_cl <- factor(pop_cl$group_membership)
+lda_cv <- MASS::lda(X_cl, g_cl, CV = TRUE); qda_cv <- MASS::qda(X_cl, g_cl, CV = TRUE)
+acc_lda_cv <- mean(lda_cv$class == g_cl); acc_qda_cv <- mean(qda_cv$class == g_cl)
+acc_lda_tr <- mean(predict(MASS::lda(X_cl, g_cl))$class == g_cl)
+conf_lda <- table(Réel = g_cl, Prédit = lda_cv$class)
+```
+
+::: {.callout-tip title="Objectifs d'apprentissage"}
+À la fin de ce chapitre, vous devriez être capable de :
+
+- distinguer la question posée par la MANOVA de celle posée par l'analyse discriminante, appliquées aux mêmes données;
+- calculer un taux de classification de référence (hasard ou règle du groupe majoritaire) et l'utiliser pour juger une performance de classification;
+- expliquer pourquoi une covariance commune produit une frontière linéaire (LDA) alors qu'une covariance propre à chaque groupe produit une frontière quadratique (QDA);
+- distinguer précision, rappel et score F1, et expliquer pourquoi la précision globale peut être trompeuse avec des groupes déséquilibrés;
+- expliquer pourquoi évaluer une règle discriminante sur ses propres données d'entraînement surestime sa performance réelle.
+:::
+
+::: {.callout-important title="Idée centrale"}
+La performance maximale qu'une méthode de classification peut atteindre est limitée par la structure même de la population — le degré de chevauchement entre les distributions des groupes — et non par la sophistication de la méthode. Le générateur permet de connaître cette limite à l'avance, et donc de savoir si une classification imparfaite reflète un problème d'estimation ou une limite réelle et incontournable de séparabilité.
+:::
+
+::: {.callout-warning title="Pièges classiques"}
+- Juger une précision de classification sans la comparer à une référence appropriée (le hasard, ou la règle consistant à toujours prédire le groupe le plus fréquent).
+- Croire que la QDA est toujours préférable parce qu'elle impose moins de contraintes : elle exige d'estimer $p(p+1)/2$ paramètres de covariance par groupe et peut devenir instable avec peu d'observations.
+- Évaluer une règle discriminante sur les mêmes données ayant servi à l'entraîner, ce qui surestime systématiquement sa performance réelle.
+- Confondre « différence statistiquement détectable » (ce que teste la MANOVA) et « classification individuelle précise » : les deux questions sont liées mais distinctes, et un résultat significatif n'implique pas une bonne classification individuelle.
+- Ajouter des variables en pensant améliorer automatiquement la classification, sans vérifier si elles apportent une information réellement nouvelle ou seulement redondante avec des variables déjà présentes.
+:::
+
+La MANOVA et l'analyse discriminante peuvent être appliquées aux mêmes données, mais elles ne posent pas la même question. La MANOVA demande si plusieurs groupes diffèrent sur un ensemble de variables. L'analyse discriminante part plutôt de groupes déjà connus et cherche à déterminer dans quelle mesure les variables permettent de distinguer ces groupes et de classer de nouvelles observations.
+
+Cette différence de perspective est particulièrement intéressante avec des données simulées. Puisque le générateur contrôle les moyennes et les covariances des groupes, nous savons à l'avance pourquoi une classification devrait être facile ou difficile. Nous pouvons créer des populations presque indiscernables, des groupes séparés principalement par leurs moyennes ou encore des groupes dont les structures de covariance diffèrent. Ces scénarios permettent de comprendre directement les conditions qui favorisent l'analyse discriminante linéaire ou quadratique.
+
+## De la comparaison à la prédiction
+
+Supposons que chaque observation soit décrite par un vecteur :
+
+$$
+\mathbf{X}
+=
+(X_1,X_2,\ldots,X_p)^{\mathsf T}
+$$
+
+et qu'elle appartienne à l'un de $G$ groupes.
+
+Dans une MANOVA, le groupe constitue la variable explicative et les variables $X_1,\ldots,X_p$ sont les réponses. On demande si les vecteurs de moyennes diffèrent entre les groupes.
+
+En classification, la direction du raisonnement change. Les valeurs de $\mathbf{X}$ sont maintenant utilisées pour prédire le groupe :
+
+$$
+\mathbf{X}
+\longrightarrow
+G.
+$$
+
+Les données peuvent donc être exactement les mêmes. C'est la question statistique qui change.
+
+## Ce qui rend deux groupes classifiables
+
+Pour pouvoir classer correctement les observations, les distributions multivariées des groupes doivent contenir de l'information permettant de les distinguer. Deux caractéristiques sont particulièrement importantes : leur position et leur dispersion.
+
+La position est décrite par le vecteur de moyennes :
+
+$$
+\boldsymbol{\mu}_g.
+$$
+
+La dispersion et les relations entre les variables sont décrites par la matrice de covariance :
+
+$$
+\boldsymbol{\Sigma}_g.
+$$
+
+Deux groupes peuvent ainsi différer parce que leurs centres ne sont pas au même endroit, parce que leurs formes de dispersion sont différentes, ou pour ces deux raisons simultanément. Ces possibilités correspondent directement aux contrôles multigroupes du générateur.
+
+## Générer un jeu approprié avec MultvarGen
+
+Pour un premier exercice de classification linéaire, générez **2** facteurs et **Fixe — 5** variables par facteur, avec des charges principales **élevées (0,65–0,80)**, aucune charge secondaire et une corrélation factorielle **fixe de 0,30**. Créez **2** groupes de **300** personnes; choisissez des différences de moyennes **fortes** et des covariances **identiques**. Gardez une distribution **normale**, des réponses **continues** et aucune donnée manquante.
+
+Exportez les données individuelles et utilisez `Groupe` comme variable à prédire, avec les dix indicateurs comme prédicteurs. Les différences de moyennes créent une séparation entre les groupes, tandis que les covariances égales rendent la LDA appropriée comme point de départ. Ne vous attendez pas pour autant à une classification presque parfaite : avec un déplacement de 0,80 écart-type sur un seul facteur, la meilleure règle possible ne classe correctement qu'environ `r pc(pnorm(sqrt(D2_cl) / 2), 0)` des personnes (voir la section sur la limite fixée par la population). Consultez les tableaux par groupe et la matrice de covariance dans l'application avant l'analyse. Pour transformer ce même exercice en comparaison LDA–QDA, modifiez seulement **Covariances entre groupes** vers une variation modérée, puis générez un nouveau jeu.
+
+## Une classification impossible ou presque
+
+Commençons par la situation la plus simple. Supposons que deux groupes possèdent exactement la même moyenne et la même matrice de covariance :
+
+$$
+\boldsymbol{\mu}_1
+=
+\boldsymbol{\mu}_2
+$$
+
+et :
+
+$$
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2.
+$$
+
+Si leurs distributions sont autrement identiques, les variables observées ne contiennent aucune information permettant de déterminer le groupe d'origine d'une observation. Une observation située à un endroit donné de l'espace multivarié est tout aussi compatible avec l'une ou l'autre population.
+
+Dans une simulation finie, une méthode de classification peut malgré tout sembler trouver certaines différences. Elle exploite alors des particularités accidentelles de l'échantillon. Cette situation constitue une excellente démonstration du surajustement : une règle peut apprendre une partie du bruit présent dans les données d'entraînement sans disposer d'une véritable information populationnelle permettant la classification.
+
+## Le rôle du taux de classification de référence
+
+La performance d'une méthode de classification doit toujours être comparée à une référence appropriée. Avec deux groupes de même taille, une règle qui attribue les observations au hasard obtient en moyenne environ 50 % de classifications correctes.
+
+Avec trois groupes de même taille, cette référence devient approximativement :
+
+$$
+\frac{1}{3}
+=
+33{,}3\%.
+$$
+
+Lorsque les groupes sont déséquilibrés, une règle encore plus simple consiste à toujours prédire le groupe le plus fréquent. Si 70 % des observations appartiennent à `G1`, une précision globale de 70 % peut donc être obtenue sans utiliser aucune variable prédictive.
+
+Une précision apparemment élevée ne suffit ainsi pas à démontrer qu'un modèle possède une bonne capacité discriminante. Elle doit être interprétée relativement à la composition des groupes et à la difficulté réelle du problème.
+
+## Séparer les groupes par leurs moyennes
+
+Le scénario classique de classification apparaît lorsque les groupes possèdent des vecteurs de moyennes différents :
+
+$$
+\boldsymbol{\mu}_1
+\neq
+\boldsymbol{\mu}_2,
+$$
+
+tout en partageant une matrice de covariance commune :
+
+$$
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2.
+$$
+
+Les groupes ont alors essentiellement la même forme, mais leurs centres occupent des positions différentes dans l'espace multivarié. Plus ces centres sont éloignés relativement à la dispersion interne des groupes, plus la classification devient facile.
+
+Le générateur crée cette situation en introduisant des différences de moyennes factorielles tout en conservant les covariances égales. Le déplacement latent se transmet aux variables observées par la matrice des charges, produisant une séparation multivariée structurée.
+
+## De la différence latente à la frontière de classification
+
+Supposons que deux groupes diffèrent principalement sur un facteur $F_1$. Les variables fortement chargées sur ce facteur auront tendance à différer davantage entre les groupes et fourniront donc une information particulièrement utile pour la classification.
+
+Les variables associées à d'autres facteurs peuvent être beaucoup moins discriminantes. Elles contribuent néanmoins à la structure de covariance et peuvent donc influencer la règle de classification lorsqu'elles sont considérées simultanément.
+
+Le modèle factoriel agit ainsi en arrière-plan : il détermine quelles variables portent le signal de séparation et lesquelles contiennent principalement de la variation commune ou résiduelle.
+
+## L'analyse discriminante linéaire
+
+L'analyse discriminante linéaire, ou LDA pour *linear discriminant analysis*, suppose classiquement que chaque groupe suit une distribution multivariée normale et que les groupes partagent une matrice de covariance commune :
+
+$$
+\boldsymbol{\Sigma}_1
+=
+\boldsymbol{\Sigma}_2
+=
+\cdots
+=
+\boldsymbol{\Sigma}_G
+=
+\boldsymbol{\Sigma}.
+$$
+
+Les groupes peuvent cependant posséder des vecteurs de moyennes différents. Sous ces conditions, la règle permettant de comparer deux groupes conduit à une frontière de décision linéaire.
+
+Pour le groupe $g$, une fonction discriminante peut être écrite sous la forme :
+
+$$
+\delta_g(\mathbf{x})
+=
+\mathbf{x}^{\mathsf T}
+\boldsymbol{\Sigma}^{-1}
+\boldsymbol{\mu}_g
+-
+\frac{1}{2}
+\boldsymbol{\mu}_g^{\mathsf T}
+\boldsymbol{\Sigma}^{-1}
+\boldsymbol{\mu}_g
++
+\log(\pi_g),
+$$
+
+où $\pi_g$ représente la probabilité a priori d'appartenir au groupe $g$.
+
+Une nouvelle observation est attribuée au groupe dont la fonction discriminante est la plus élevée.
+
+## Pourquoi la frontière est-elle linéaire ?
+
+Lorsque tous les groupes partagent la même matrice de covariance, le terme quadratique impliquant directement $\mathbf{x}$ est commun aux groupes et disparaît lors de leur comparaison. La frontière séparant deux catégories dépend donc d'une combinaison linéaire des variables.
+
+Dans un espace à deux variables, cette frontière est une droite. Dans un espace comportant davantage de variables, elle devient un hyperplan.
+
+Cette géométrie correspond précisément au scénario que le générateur peut créer avec des **moyennes différentes et des covariances égales**.
+
+::: {.callout-tip title="Scénario naturel pour la LDA"}
+Générez plusieurs groupes avec des différences de moyennes modérées et choisissez des covariances égales. Vous créez ainsi une population dont les propriétés correspondent directement aux principales hypothèses structurelles de la LDA.
+:::
+
+## La distance entre les groupes
+
+La séparation entre deux groupes ne dépend pas simplement de la distance brute entre leurs moyennes. Elle dépend également de la variabilité et des corrélations entre les variables.
+
+La distance de Mahalanobis tient compte de cette structure :
+
+$$
+D^2
+=
+(\boldsymbol{\mu}_1-\boldsymbol{\mu}_2)^{\mathsf T}
+\boldsymbol{\Sigma}^{-1}
+(\boldsymbol{\mu}_1-\boldsymbol{\mu}_2).
+$$
+
+Deux groupes peuvent donc avoir des différences de moyennes numériquement semblables mais des degrés de séparation très différents selon leur dispersion. Une différence située dans une direction où les observations varient peu est plus informative qu'une différence de même amplitude dans une direction où elles sont extrêmement dispersées.
+
+Cette idée explique pourquoi l'analyse discriminante est fondamentalement multivariée. Elle ne classe pas simplement les observations à partir de la variable présentant la plus grande différence de moyenne.
+
+## La limite fixée par la population
+
+Pour deux groupes de même taille, normaux, avec une covariance commune, la distance de Mahalanobis fixe exactement la meilleure performance possible. Aucune règle de classification, si sophistiquée soit-elle, ne peut dépasser :
+
+$$
+P_{\max} = \Phi\!\left(\frac{D}{2}\right),
+$$
+
+où $\Phi$ est la fonction de répartition de la loi normale centrée réduite. Comme le générateur connaît $\boldsymbol{\mu}_1$, $\boldsymbol{\mu}_2$ et $\boldsymbol{\Sigma}$, on peut calculer cette limite **avant** de faire la moindre analyse.
+
+```{r}
+#| label: tbl-limite
+#| tbl-cap: "Distance de Mahalanobis populationnelle et taux de classification maximal pour deux groupes de même taille, selon le niveau des différences de moyennes latentes (2 facteurs corrélés à 0,30, 5 items par facteur, charges élevées, covariances égales, graine 2024)."
+nv <- c(low = "Faibles (0,25)", moderate = "Modérées (0,50)", high = "Fortes (0,80)")
+lim <- do.call(rbind, lapply(names(nv), function(k) {
+  D2 <- D2_pop(generer(2024, nfact = 2, vpf = 5L, group_sizes = c(300L, 300L), group_mean_diff = k))
+  data.frame(`Différences latentes` = nv[[k]], `D²` = D2, D = sqrt(D2),
+             `Classification maximale` = pc(pnorm(sqrt(D2) / 2), 1), check.names = FALSE)
+}))
+tab_fr(lim, 3)
+```
+
+Le résultat surprend souvent : même avec les différences « fortes », deux groupes se chevauchent largement, et la meilleure règle se trompe encore pour environ un tiers des personnes. Le déplacement porte en effet sur un seul facteur, d'au plus 0,80 écart-type; les items étant des mesures imparfaites de ce facteur, la distance observée est même un peu plus petite que la distance latente. C'est la leçon centrale de ce chapitre : une classification médiocre peut refléter une limite de la population, et non un défaut de la méthode.
+
+::: {.callout-tip title="Créer des groupes plus séparés"}
+Avec trois groupes ou plus, `G3` est déplacé sur un autre facteur que `G2` : les groupes `G2` et `G3` sont alors séparés sur deux dimensions et donc plus faciles à distinguer l'un de l'autre que chacun de `G1`. Augmenter le nombre d'items par facteur ou les charges rapproche aussi la distance observée de la distance latente.
+:::
+
+## Rendre progressivement la LDA plus facile
+
+Le générateur permet de construire une expérience particulièrement simple en maintenant les covariances égales et en augmentant progressivement les différences de moyennes.
+
+Avec aucune différence, la classification devrait rester proche de la performance de référence. Avec une faible différence, une certaine information discriminante apparaît mais les distributions se chevauchent encore fortement. Avec des différences modérées ou fortes, la précision devrait augmenter à mesure que les centres des groupes s'éloignent.
+
+Cette progression permet de relier directement une propriété populationnelle à la performance de classification. Elle montre également qu'il n'existe pas une frontière magique séparant les problèmes « classifiables » des problèmes « non classifiables » : la difficulté varie continûment avec le degré de chevauchement des populations.
+
+## Quand les covariances deviennent différentes
+
+La situation change lorsque :
+
+$$
+\boldsymbol{\Sigma}_1
+\neq
+\boldsymbol{\Sigma}_2.
+$$
+
+Les groupes peuvent alors différer non seulement par leur centre, mais également par leur dispersion et par l'orientation de leurs relations multivariées. Une frontière linéaire n'est plus nécessairement suffisante pour séparer efficacement leurs distributions.
+
+Le générateur permet de créer cette situation en demandant des différences de covariance entre les groupes. Les modifications apportées aux variances et aux covariances factorielles se transmettent aux variables observées, produisant des matrices de covariance propres à chaque population.
+
+## L'analyse discriminante quadratique
+
+L'analyse discriminante quadratique, ou QDA pour *quadratic discriminant analysis*, ne suppose pas une covariance commune. Chaque groupe possède sa propre matrice :
+
+$$
+\boldsymbol{\Sigma}_g.
+$$
+
+La fonction discriminante prend alors une forme comprenant des termes quadratiques :
+
+$$
+\delta_g(\mathbf{x})
+=
+-\frac{1}{2}
+\log|\boldsymbol{\Sigma}_g|
+-
+\frac{1}{2}
+(\mathbf{x}-\boldsymbol{\mu}_g)^{\mathsf T}
+\boldsymbol{\Sigma}_g^{-1}
+(\mathbf{x}-\boldsymbol{\mu}_g)
++
+\log(\pi_g).
+$$
+
+La frontière séparant deux groupes peut donc être courbe. Cette flexibilité permet à la QDA de représenter des populations ayant des dispersions différentes.
+
+Elle a cependant un coût : davantage de paramètres doivent être estimés puisque chaque groupe possède sa propre matrice de covariance.
+
+## Flexibilité et quantité de données
+
+La différence entre LDA et QDA illustre un principe général en modélisation statistique. Un modèle plus flexible peut représenter des structures plus complexes, mais cette flexibilité exige davantage d'information.
+
+Avec $p$ variables, une matrice de covariance comporte :
+
+$$
+\frac{p(p+1)}{2}
+$$
+
+paramètres distincts.
+
+La LDA estime essentiellement une matrice commune, tandis que la QDA doit en estimer une pour chaque groupe. Lorsque le nombre de variables est important et que les groupes sont petits, cette différence peut devenir considérable.
+
+La QDA n'est donc pas automatiquement préférable simplement parce qu'elle impose moins de contraintes. Si la covariance commune est une bonne approximation ou si l'échantillon est limité, la LDA peut produire une classification plus stable.
+
+## Une comparaison contrôlée de LDA et QDA
+
+Le générateur permet de comparer les deux méthodes dans des conditions où nous savons laquelle correspond le mieux à la population.
+
+Dans un premier scénario, on génère des différences de moyennes avec des covariances égales. La LDA utilise alors une hypothèse correcte et bénéficie de l'estimation d'une covariance commune.
+
+Dans un second scénario, on conserve les différences de moyennes mais on introduit des covariances différentes. La QDA dispose maintenant d'un modèle plus fidèle à la structure populationnelle.
+
+La comparaison devient particulièrement intéressante si plusieurs tailles d'échantillon sont utilisées. Avec beaucoup de données, la flexibilité supplémentaire de la QDA peut être avantageuse lorsque les covariances diffèrent réellement. Avec de petits groupes, l'estimation de plusieurs matrices de covariance peut au contraire devenir instable [@Hastie2009].
+
+```{r}
+#| label: fig-lda-qda
+#| cache: true
+#| fig-cap: "Taux de classification en validation croisée (une observation laissée de côté) de la LDA et de la QDA, selon la taille de chaque groupe (2 groupes, 2 facteurs corrélés à 0,30, 10 items, charges élevées, différences de moyennes fortes, graine 2024; 150 échantillons par point). À gauche, covariances identiques; à droite, covariances fortement différentes. Le trait pointillé marque la limite théorique de la LDA lorsque les covariances sont égales."
+#| fig-width: 7.6
+#| fig-height: 3.5
+#| out-width: "100%"
+set.seed(81)
+pops_lq <- list("Covariances identiques" = pop_cl,
+                "Covariances différentes" = generer(2024, nfact = 2, vpf = 5L, group_sizes = c(300L, 300L),
+                                                    group_mean_diff = "high", group_cov_diff = "high"))
+lq <- do.call(rbind, lapply(names(pops_lq), function(nm) {
+  do.call(rbind, lapply(c(20, 40, 80, 160, 320), function(n) {
+    a <- t(replicate(150, { x <- tirer_groupes(pops_lq[[nm]], n)
+      c(mean(MASS::lda(x$X, x$g, CV = TRUE)$class == x$g),
+        tryCatch(mean(MASS::qda(x$X, x$g, CV = TRUE)$class == x$g), error = function(e) NA)) }))
+    data.frame(cov = nm, n = n, methode = c("LDA", "QDA"), acc = colMeans(a, na.rm = TRUE))
+  }))
+}))
+lq$cov <- factor(lq$cov, levels = names(pops_lq))
+ggplot(lq, aes(n, acc, colour = methode)) + geom_line(linewidth = 1.05) + geom_point(size = 2) +
+  geom_hline(data = data.frame(cov = factor("Covariances identiques", levels = names(pops_lq)),
+                               y = pnorm(sqrt(D2_cl) / 2)),
+             aes(yintercept = y), linetype = "dashed", colour = "grey40") +
+  facet_wrap(~cov) +
+  scale_x_log10(breaks = c(20, 40, 80, 160, 320)) +
+  scale_colour_manual(values = c(pal$bleu, pal$orange), name = NULL) +
+  scale_y_continuous(labels = function(x) pc(x, 0)) +
+  labs(x = "Taille de chaque groupe (échelle logarithmique)", y = "Classification correcte")
+```
+
+La @fig-lda-qda résume ces deux mécanismes. Lorsque les covariances sont identiques, la LDA approche la limite théorique dès que les groupes sont assez grands, tandis que la QDA, qui estime une matrice de covariance par groupe, reste en retrait. Le résultat le plus instructif se trouve à droite : même lorsque les covariances diffèrent fortement, la QDA ne fait que **rattraper** la LDA avec plus de 300 personnes par groupe. Les différences de covariance produites par l'application (la variance d'un facteur et quelques corrélations) apportent peu d'information discriminante comparativement au coût d'estimer deux matrices $10 \times 10$. Un modèle plus fidèle à la population n'est pas forcément un meilleur prédicteur.
+
+## Des covariances différentes sans différences de moyennes
+
+Un scénario encore plus instructif consiste à fixer :
+
+$$
+\boldsymbol{\mu}_1
+=
+\boldsymbol{\mu}_2
+$$
+
+tout en imposant :
+
+$$
+\boldsymbol{\Sigma}_1
+\neq
+\boldsymbol{\Sigma}_2.
+$$
+
+Les groupes possèdent alors le même centre mais des formes différentes. Une règle reposant essentiellement sur une séparation linéaire des centres dispose de peu d'information, tandis qu'une méthode sensible aux différences de covariance peut exploiter la forme des distributions.
+
+Cette situation permet de comprendre pourquoi la QDA ne doit pas être décrite simplement comme « une LDA plus complexe ». Elle peut utiliser un type d'information discriminante qui n'existe pas dans les seules différences de moyennes.
+
+## Groupes déséquilibrés et probabilités a priori
+
+Lorsque les groupes n'ont pas la même fréquence, les probabilités a priori deviennent importantes. Si :
+
+$$
+P(G_1)=0{,}70
+$$
+
+et :
+
+$$
+P(G_2)=0{,}30,
+$$
+
+une observation possède déjà davantage de chances de provenir de `G1` avant même que ses variables soient examinées.
+
+Les fonctions discriminantes peuvent intégrer cette information au moyen de $\pi_g$. Le choix des probabilités a priori dépend cependant de la question étudiée. Les proportions observées dans l'échantillon peuvent être appropriées dans certains contextes, tandis que des probabilités égales peuvent être préférables lorsqu'on souhaite donner le même poids décisionnel à chaque groupe.
+
+Le générateur permet de créer des groupes de tailles différentes et fournit donc un moyen simple d'étudier les conséquences de ce choix.
+
+## La matrice de confusion
+
+Une fois les prédictions produites, la matrice de confusion résume les groupes réels et les groupes prédits.
+
+Pour deux groupes, elle prend la forme générale :
+
+|  | Prédit G1 | Prédit G2 |
+|---|---:|---:|
+| Réel G1 | correctement classé | classé G2 |
+| Réel G2 | classé G1 | correctement classé |
+
+La diagonale contient les observations correctement classées. Les autres cellules montrent les types d'erreurs commises.
+
+Cette matrice fournit beaucoup plus d'information que la seule précision globale. Elle permet notamment de voir si un groupe est très bien reconnu tandis qu'un autre est fréquemment attribué à la mauvaise catégorie.
+
+## La précision globale
+
+La précision globale est :
+
+$$
+\text{Précision globale}
+=
+\frac{\text{nombre de classifications correctes}}
+{\text{nombre total d'observations}}.
+$$
+
+Cette mesure est intuitive, mais elle peut devenir trompeuse lorsque les groupes sont déséquilibrés. Une excellente précision globale peut cacher une très mauvaise capacité à reconnaître un groupe minoritaire.
+
+Pour cette raison, l'évaluation devrait également examiner les performances propres à chaque groupe.
+
+## Précision, rappel et F1 par groupe
+
+Pour une catégorie donnée, la précision indique quelle proportion des observations prédites dans cette catégorie y appartiennent réellement :
+
+$$
+\text{Précision}
+=
+\frac{VP}{VP+FP}.
+$$
+
+Le rappel indique quelle proportion des observations appartenant réellement à la catégorie ont été correctement reconnues :
+
+$$
+\text{Rappel}
+=
+\frac{VP}{VP+FN}.
+$$
+
+Le score F1 combine les deux :
+
+$$
+F1
+=
+2
+\frac{
+\text{Précision}\times\text{Rappel}
+}{
+\text{Précision}+\text{Rappel}
+}.
+$$
+
+Dans un problème à plusieurs groupes, ces mesures peuvent être calculées successivement en considérant chaque groupe comme la catégorie d'intérêt. Elles permettent de repérer des asymétries que la précision globale ne révèle pas.
+
+## Pourquoi évaluer sur de nouvelles observations ?
+
+Une règle discriminante est construite à partir d'un échantillon. Si sa performance est évaluée sur exactement les mêmes observations, le résultat tend à être trop optimiste, puisque le modèle est jugé sur les données qui ont servi à l'estimer.
+
+L'objectif réel est plutôt de savoir comment la règle se comportera sur de nouvelles observations provenant des mêmes populations. Une validation croisée ou un échantillon de test fournit une estimation plus réaliste de cette performance.
+
+Cette distinction devient particulièrement importante lorsque le nombre de variables est élevé relativement au nombre d'observations. Un modèle flexible peut alors apprendre des particularités accidentelles de l'échantillon d'entraînement qui ne se reproduiront pas dans de nouvelles données.
+
+## La validation croisée comme expérience de simulation
+
+Avec des données simulées, on sait que toutes les observations proviennent du même mécanisme populationnel. Une diminution de performance entre l'échantillon d'apprentissage et la validation constitue donc une illustration particulièrement claire du surajustement.
+
+On peut accentuer ce phénomène en augmentant le nombre de variables ou en diminuant la taille des groupes. La QDA devrait être particulièrement sensible à cette difficulté puisqu'elle doit estimer davantage de paramètres.
+
+La simulation permet ainsi de relier trois notions qui sont parfois enseignées séparément : complexité du modèle, taille de l'échantillon et généralisation à de nouvelles observations.
+
+```{r}
+#| label: fig-surajustement
+#| cache: true
+#| fig-cap: "Taux de classification de la LDA lorsque les deux groupes proviennent exactement de la même population (aucune différence de moyennes ni de covariances; 15 items, graine 2024; 200 échantillons par point). Évaluée sur ses propres données, la règle semble faire mieux que le hasard; en validation croisée, elle reste à 50 %."
+#| fig-height: 3.2
+set.seed(82)
+pop0 <- generer(2024, group_sizes = c(100L, 100L))
+sur <- do.call(rbind, lapply(c(15, 25, 50, 100, 200), function(n) {
+  a <- t(replicate(200, { x <- tirer_groupes(pop0, n)
+    c(mean(predict(MASS::lda(x$X, x$g))$class == x$g), mean(MASS::lda(x$X, x$g, CV = TRUE)$class == x$g)) }))
+  data.frame(n = n, eval = c("Sur les données d'entraînement", "En validation croisée"), acc = colMeans(a))
+}))
+ggplot(sur, aes(n, acc, colour = eval)) + geom_line(linewidth = 1.05) + geom_point(size = 2) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey40") +
+  scale_x_log10(breaks = c(15, 25, 50, 100, 200)) +
+  scale_colour_manual(values = c(pal$vert, pal$orange), name = NULL) +
+  scale_y_continuous(labels = function(x) pc(x, 0)) +
+  labs(x = "Taille de chaque groupe (échelle logarithmique)", y = "Classification correcte")
+```
+
+Avec 15 personnes par groupe et 15 prédicteurs, la LDA classe correctement environ `r pc(sur$acc[sur$n == 15 & sur$eval == "Sur les données d'entraînement"], 0)` des personnes de son propre échantillon… alors qu'il n'y a strictement rien à apprendre. La validation croisée révèle le hasard.
+
+## Les variables redondantes
+
+Comme pour la MANOVA, ajouter des variables ne garantit pas une meilleure analyse. Plusieurs indicateurs fortement associés au même facteur peuvent contenir une information largement redondante.
+
+Si cinq variables expriment presque la même dimension discriminante, leur présence ne correspond pas à cinq sources indépendantes d'information. Elles peuvent même compliquer l'estimation des matrices de covariance lorsque leurs corrélations deviennent très fortes.
+
+Le moteur factoriel permet de contrôler naturellement cette redondance. On peut ainsi comparer une classification fondée sur quelques indicateurs informatifs à une autre utilisant un grand nombre de variables fortement reliées.
+
+## Les variables peu discriminantes
+
+Une variable peut être bien mesurée et présenter une variance importante sans contribuer beaucoup à la classification. Si sa distribution est presque identique dans tous les groupes, elle fournit peu d'information sur l'appartenance.
+
+Le générateur permet d'illustrer ce phénomène lorsque les groupes diffèrent principalement sur un facteur particulier. Les variables associées à ce facteur portent directement le signal de séparation, tandis que celles associées aux autres dimensions peuvent surtout ajouter de la variation commune.
+
+Cette situation montre pourquoi une variable statistiquement intéressante dans l'ensemble des données n'est pas nécessairement une bonne variable discriminante.
+
+## Trois groupes ou davantage
+
+La logique ne change pas fondamentalement lorsque le nombre de groupes augmente. Chaque population possède son vecteur de moyennes et sa matrice de covariance, et la règle discriminante compare les fonctions associées aux différentes catégories.
+
+La géométrie devient cependant plus complexe. Avec trois groupes, par exemple, une observation peut être relativement proche de deux populations et éloignée de la troisième. Les erreurs ne se répartissent donc pas nécessairement uniformément entre toutes les catégories.
+
+La matrice de confusion devient alors particulièrement informative, puisqu'elle montre quelles paires de groupes sont les plus souvent confondues.
+
+## Un scénario LDA classique
+
+Une première simulation peut comprendre trois groupes de même taille, des différences modérées de moyennes et des covariances égales.
+
+Cette configuration correspond directement à la logique populationnelle de la LDA. On devrait observer une classification supérieure à la référence si les déplacements de moyennes sont suffisamment importants relativement à la dispersion interne.
+
+On peut ensuite augmenter ou diminuer les différences de moyennes sans modifier aucun autre paramètre afin d'observer comment le degré de chevauchement influence la performance.
+
+## Un scénario QDA
+
+Pour une deuxième simulation, on conserve les différences de moyennes mais on introduit des différences de covariance.
+
+Les groupes diffèrent maintenant par leur centre et par leur structure de dispersion. La comparaison entre LDA et QDA permet d'examiner le coût de l'hypothèse de covariance commune lorsque celle-ci est fausse dans la population.
+
+Cette expérience devrait être répétée avec différentes tailles de groupes. Elle montre qu'un modèle populationnellement plus approprié n'est pas nécessairement mieux estimé lorsqu'il dispose de peu de données.
+
+## Un scénario de classification difficile
+
+On peut finalement créer plusieurs groupes présentant seulement de faibles différences de moyennes, des covariances relativement semblables et un chevauchement important.
+
+La précision de classification devrait alors rester modeste, même si certaines différences sont statistiquement détectables. Cette situation est importante parce qu'elle distingue clairement deux questions : démontrer que des populations ne sont pas identiques et prédire correctement l'appartenance d'un individu sont deux objectifs très différents.
+
+Une MANOVA peut détecter une faible différence avec un grand échantillon alors que la classification individuelle demeure médiocre. Il n'y a aucune contradiction entre ces deux résultats.
+
+::: {.callout-note title="Significatif ne signifie pas prédictif"}
+Une différence entre groupes peut être très clairement établie statistiquement tout en étant beaucoup trop faible pour permettre une classification individuelle précise. Le test d'une différence populationnelle et la qualité d'une prédiction ne mesurent pas la même chose.
+:::
+
+## MANOVA, LDA et QDA sur les mêmes données
+
+Une expérience intégrée consiste à générer un seul jeu de données comportant plusieurs groupes, puis à l'analyser successivement par MANOVA, LDA et QDA.
+
+La MANOVA répond à la question :
+
+> Les groupes diffèrent-ils sur l'ensemble des variables ?
+
+La LDA pose plutôt la question :
+
+> Peut-on utiliser une combinaison linéaire des variables pour distinguer et classer les groupes en supposant une covariance commune ?
+
+La QDA demande finalement :
+
+> La classification s'améliore-t-elle lorsque chaque groupe peut posséder sa propre structure de covariance ?
+
+Les données n'ont pas changé. Seule la question posée à la population a changé.
+
+## Ce que la classification simulée nous apprend
+
+La qualité d'une classification dépend d'abord de la quantité d'information réellement présente dans la population. Aucun algorithme ne peut parfaitement séparer deux groupes dont les distributions se chevauchent presque complètement.
+
+Les différences de moyennes déterminent une partie importante de cette information, tandis que les matrices de covariance décrivent la forme et la dispersion des populations. La LDA exploite efficacement une structure dans laquelle les groupes partagent une covariance commune. La QDA peut représenter des structures plus complexes, mais elle doit estimer davantage de paramètres et exige donc davantage de données.
+
+Le générateur permet de contrôler ces propriétés avant même l'analyse. On peut ainsi savoir si une mauvaise classification provient d'un problème d'estimation ou simplement du fait que les populations sont intrinsèquement difficiles à distinguer.
+
+Cette distinction constitue probablement l'une des leçons les plus importantes de la simulation : **la performance maximale d'une méthode est limitée par la structure de la population elle-même**.
+
+Le prochain chapitre abandonnera les groupes pour examiner un autre grand problème multivarié. Nous utiliserons la structure factorielle pour créer **deux ensembles de variables reliés entre eux**, puis nous demanderons quelles combinaisons de ces variables maximisent leur relation. Nous passerons ainsi à la **corrélation canonique**.
+
+::: {.callout-note title="🖥️ Dans l'application"}
+- **Configurer → Groupes** : *Différences de moyennes latentes* règle la séparation des centres; *Covariances entre groupes* décide si la LDA ou la QDA correspond à la population; des tailles inégales créent des probabilités a priori inégales.
+- **Structure populationnelle → Structure des facteurs** : moyennes latentes et matrices factorielles vraies de chaque groupe.
+- **Données → Description par groupe** : covariances observées de chaque groupe avant l'analyse.
+- Le **corrigé enseignant** contient les scores factoriels vrais, utiles pour comparer une classification fondée sur les items à une classification fondée sur les facteurs eux-mêmes.
+:::
+
+## Laboratoire : une classification dont on connaît la limite {#sec-labo-8}
+
+Générez **2** facteurs, **Fixe — 5** variables, corrélation **Fixe — 0,30**, charges principales **Élevées**, aucune charge secondaire, **2** groupes de **300** personnes, des différences de moyennes **fortes**, des covariances **identiques** et la graine **2024**. Réalisez une LDA de `Groupe` sur les dix items.
+
+1. Quel taux de classification obtenez-vous sur les données d'entraînement? En validation croisée?
+2. Comparez-le à la limite théorique $\Phi(D/2)$, sachant que $D^2 = `r frm(D2_cl)`$ dans cette population.
+3. Une QDA fait-elle mieux?
+
+::: {.callout-tip title="Réponse" collapse="true"}
+1. Sur les données d'entraînement : `r pc(acc_lda_tr, 1)`; en validation croisée : `r pc(acc_lda_cv, 1)`. La matrice de confusion en validation croisée est la suivante :
+
+```{r}
+#| label: tbl-confusion
+#| tbl-cap: "Matrice de confusion de la LDA en validation croisée (graine 2024)."
+cf <- as.data.frame.matrix(conf_lda)
+knitr::kable(data.frame(Réel = rownames(cf), `Prédit G1` = cf[, 1], `Prédit G2` = cf[, 2], check.names = FALSE))
+```
+
+2. $\Phi(\sqrt{`r frm(D2_cl)`}/2) = \Phi(`r frm(sqrt(D2_cl) / 2)`) = `r frm(pnorm(sqrt(D2_cl) / 2))`$. Le taux en validation croisée est donc proche de la meilleure performance possible : la LDA fait son travail; c'est la population qui limite la classification. Le taux d'entraînement est plus élevé que celui de la validation croisée : c'est l'optimisme dû au surajustement.
+3. Non : `r pc(acc_qda_cv, 1)` en validation croisée. Les covariances étant égales dans la population, les paramètres supplémentaires de la QDA n'apportent que du bruit d'estimation.
+:::
+
+::: {.callout-important title="À retenir"}
+- MANOVA et classification posent deux questions différentes sur les mêmes données.
+- La meilleure classification possible est fixée par la population : $\Phi(D/2)$ pour deux groupes à covariances égales.
+- Les différences latentes de l'application, même « fortes », laissent un chevauchement important.
+- LDA si les covariances sont communes; QDA si elles diffèrent **et** si les groupes sont assez grands.
+- Toujours évaluer en validation croisée et comparer au taux de référence.
+:::
+
+## Erreurs fréquentes
+
+| Erreur | Ce qu'il faut retenir |
+|---|---|
+| Juger une précision sans référence | Toujours comparer à la performance du hasard ou de la règle du groupe majoritaire |
+| Préférer systématiquement la QDA | Elle exige $p(p+1)/2$ paramètres de covariance par groupe; instable avec peu d'observations |
+| Évaluer une règle sur ses données d'entraînement | Cela surestime systématiquement la performance réelle; utiliser une validation croisée ou un échantillon de test |
+| Confondre effet détectable et classification précise | Une MANOVA significative n'implique pas une bonne classification individuelle |
+| Ajouter des variables sans vérifier leur apport | Des variables redondantes n'ajoutent pas d'information nouvelle et compliquent l'estimation |
+
+## Quiz
+
+::: {.callout-note title="Question 1 — numérique" collapse="true"}
+Une classification porte sur $p = 6$ variables. Combien de paramètres distincts une seule matrice de covariance $\boldsymbol{\Sigma}_g$ comporte-t-elle?
+
+**Réponse : 21.** $\dfrac{p(p+1)}{2} = \dfrac{6 \times 7}{2} = 21$.
+:::
+
+::: {.callout-note title="Question 2 — numérique" collapse="true"}
+Dans un problème à 4 groupes de tailles égales, quel est le taux de classification de référence obtenu en attribuant les observations au hasard?
+
+**Réponse : 25 %.** $1/4 = 0{,}25$.
+:::
+
+::: {.callout-note title="Question 3 — vrai ou faux" collapse="true"}
+Vrai ou faux : une précision globale de 82 % est nécessairement un bon résultat pour un problème de classification à deux groupes.
+
+**Réponse : Faux.** Si les groupes sont déséquilibrés — par exemple 85 % contre 15 % — la règle triviale consistant à toujours prédire le groupe majoritaire atteint déjà 85 %, ce qui rend 82 % en réalité pire que cette référence.
+:::
+
+::: {.callout-note title="Question 4 — diagnostic de scénario" collapse="true"}
+Vous obtenez une précision globale de 78 % pour classer trois groupes dont les tailles réelles sont très déséquilibrées : 80 %, 15 % et 5 % des observations. Est-ce un bon résultat? Que devriez-vous vérifier avant de conclure?
+
+**Réponse :** Ce n'est probablement pas un bon résultat : la règle triviale consistant à toujours prédire le groupe majoritaire atteindrait déjà 80 % de précision globale, ce qui dépasse le résultat obtenu de 78 %. Avant de conclure quoi que ce soit, il faut examiner la matrice de confusion et les mesures de précision, rappel et F1 pour chaque groupe séparément — la précision globale peut masquer une classification presque nulle des groupes minoritaires, particulièrement le groupe à 5 %, pendant que le modèle se contente essentiellement de reproduire la fréquence du groupe majoritaire.
+:::

@@ -1,0 +1,897 @@
+# Comment fonctionne le générateur {#sec-appendice}
+
+```{r}
+#| include: false
+source("_common.R")
+```
+
+L'utilisation de l'application ne nécessite pas de connaître les détails mathématiques de son fonctionnement. Les chapitres précédents ont volontairement privilégié les propriétés des données produites et leur utilisation dans différents scénarios multivariés. Le présent appendice s'adresse au lecteur qui souhaite ouvrir le capot et comprendre précisément comment la population est construite avant qu'un échantillon soit généré.
+
+Le principe général repose sur le modèle factoriel commun :
+
+$$
+\mathbf{X}
+=
+\boldsymbol{\Lambda}\mathbf{F}
++
+\boldsymbol{\varepsilon},
+$$
+
+où $\mathbf{X}$ représente le vecteur des variables observées, $\boldsymbol{\Lambda}$ la matrice des charges factorielles, $\mathbf{F}$ les facteurs latents et $\boldsymbol{\varepsilon}$ les composantes propres aux variables.
+
+Cette formulation offre un moyen particulièrement économique de construire une population multivariée. Au lieu de spécifier séparément chacune des $p(p-1)/2$ corrélations entre $p$ variables, on définit quelques facteurs, leurs relations et la manière dont les variables dépendent de ces facteurs. La structure de covariance observée découle ensuite de ces éléments.
+
+## Déterminer le nombre d'indicateurs
+
+Le générateur commence par déterminer combien de variables observées seront associées à chaque facteur. Ce nombre peut être fixé par l'utilisateur ou tiré aléatoirement dans un intervalle.
+
+Pour $m$ facteurs, notons :
+
+$$
+p_j
+$$
+
+le nombre d'indicateurs principalement associés au facteur $F_j$. Le nombre total de variables est alors :
+
+$$
+p
+=
+\sum_{j=1}^{m}p_j.
+$$
+
+Lorsque le nombre d'indicateurs est fixe (de 2 à 30), chaque facteur reçoit le même nombre de variables. Les options aléatoires permettent plutôt d'obtenir des facteurs représentés par des nombres différents d'indicateurs.
+
+Dans l'implémentation actuelle, les trois plages prédéfinies correspondent respectivement à des tirages entre 5 et 10, entre 5 et 15, ou entre 5 et 20 indicateurs par facteur. Une plage personnalisée peut également être définie, entre 2 et 30.
+
+Chaque variable reçoit ensuite un **facteur principal**. Les premières variables appartiennent au premier facteur, les suivantes au deuxième, et ainsi de suite.
+
+## Construire la matrice des facteurs
+
+La matrice de relations entre les facteurs de référence est notée :
+
+$$
+\boldsymbol{\Phi}.
+$$
+
+Lorsqu'un seul facteur est demandé :
+
+$$
+\boldsymbol{\Phi}
+=
+[1].
+$$
+
+Avec plusieurs facteurs, l'utilisateur peut choisir une corrélation commune. Par exemple, avec trois facteurs et une corrélation de $0{,}30$ :
+
+$$
+\boldsymbol{\Phi}
+=
+\begin{pmatrix}
+1 & 0.30 & 0.30\\
+0.30 & 1 & 0.30\\
+0.30 & 0.30 & 1
+\end{pmatrix}.
+$$
+
+Cette structure correspond à une matrice de corrélations factorielles équicorrélées.
+
+Lorsque l'option aléatoire est utilisée, les corrélations entre facteurs sont plutôt tirées entre 0 et 0,50. Le programme vérifie ensuite que la matrice obtenue est définie positive. Si elle ne l'est pas, un nouveau tirage est effectué. Dans une structure bifactorielle, $\boldsymbol{\Phi}$ est la matrice identité : tous les facteurs, général et spécifiques, sont orthogonaux.
+
+Cette vérification est indispensable. Une matrice de corrélations doit être mathématiquement admissible pour pouvoir représenter une population multivariée.
+
+## Construire la matrice des charges
+
+La matrice des charges factorielles est notée :
+
+$$
+\boldsymbol{\Lambda}.
+$$
+
+Elle comporte une ligne pour chaque variable et une colonne pour chaque facteur :
+
+$$
+\boldsymbol{\Lambda}
+=
+\begin{pmatrix}
+\lambda_{11} & \cdots & \lambda_{1m}\\
+\vdots & \ddots & \vdots\\
+\lambda_{p1} & \cdots & \lambda_{pm}
+\end{pmatrix}.
+$$
+
+Chaque variable possède toujours une charge sur son facteur principal. Les charges principales sont générées dans des intervalles correspondant au niveau demandé dans l'application.
+
+Dans la version actuelle :
+
+| Niveau | Intervalle des charges principales |
+|---|---:|
+| Faibles | 0,35 à 0,50 |
+| Moyennes | 0,50 à 0,65 |
+| Fortes | 0,65 à 0,80 |
+| Aléatoires | 0,35 à 0,80 |
+
+Les charges principales sont tirées positives. Une structure simple produit ainsi des ensembles d'indicateurs orientés dans la même direction sur leur facteur principal, sauf lorsque des items inversés sont demandés (voir plus loin).
+
+## Ajouter les charges secondaires
+
+Une variable peut également posséder une charge sur un facteur autre que son facteur principal. Ces charges secondaires, ou *cross-loadings*, permettent de construire des structures plus ou moins simples.
+
+Lorsque les charges secondaires sont désactivées :
+
+$$
+\lambda_{ij}=0
+$$
+
+pour tout facteur $j$ qui n'est pas le facteur principal de la variable $i$.
+
+Lorsqu'elles sont activées, chaque **charge secondaire possible** fait l'objet d'un tirage aléatoire indépendant. Si $q$ représente la proportion sélectionnée, le programme effectue essentiellement :
+
+$$
+P(\lambda_{ij}\neq0)=q.
+$$
+
+La proportion choisie est donc une probabilité de présence pour chacune des cellules secondaires admissibles. Elle ne garantit pas qu'exactement 25 %, 50 % ou une autre proportion déterminée des variables présenteront une charge secondaire dans chaque échantillon de paramètres.
+
+Les charges secondaires faibles sont tirées entre $-0{,}10$ et $0{,}10$. Les charges secondaires fortes ont une amplitude comprise entre $0{,}10$ et $0{,}20$, avec un signe positif ou négatif. L'option aléatoire permet des valeurs comprises entre $-0{,}20$ et $0{,}20$.
+
+Cette construction produit une matrice $\boldsymbol{\Lambda}$ dont la complexité peut varier considérablement, depuis une structure parfaitement simple jusqu'à une structure comportant de nombreux liens secondaires.
+
+## Ajouter un facteur général
+
+Dans une structure bifactorielle, une colonne `FG` est placée en tête de $\boldsymbol{\Lambda}$. Chaque item y reçoit une charge générale tirée entre 0,30 et 0,45 (faibles), entre 0,45 et 0,60 (moyennes), entre 0,60 et 0,70 (élevées), ou fixée à une valeur choisie. Les colonnes suivantes contiennent les charges spécifiques, construites comme ci-dessus. La matrice $\boldsymbol{\Phi}$, de dimension $(m+1)\times(m+1)$, est l'identité.
+
+## Inverser des items
+
+Pour chaque facteur comportant $p_j$ items, le générateur inverse $\max\left(1,\ \lfloor q\,p_j + 0{,}5\rfloor\right)$ items tirés au hasard, sans jamais dépasser $p_j - 1$, où $q$ vaut 0,20, 1/3 ou 0,50. Inverser l'item $i$ consiste à changer le signe de toute sa ligne :
+
+$$
+\boldsymbol{\lambda}_i \leftarrow -\boldsymbol{\lambda}_i.
+$$
+
+Puisque $\left[\boldsymbol{\Lambda}\boldsymbol{\Phi}\boldsymbol{\Lambda}^{\mathsf T}\right]_{ii}$ ne dépend pas de ce signe, la communalité et l'unicité de l'item sont inchangées; seules ses covariances avec les autres items changent de signe.
+
+## Arrondir les paramètres
+
+Une fois $\boldsymbol{\Lambda}$ complète, toutes les charges sont arrondies à trois décimales. Les valeurs affichées dans l'application et consignées dans le corrigé enseignant sont donc **exactement** celles qui servent à générer les données, et non des approximations.
+
+## De la structure factorielle à la variance commune
+
+Une fois $\boldsymbol{\Lambda}$ et $\boldsymbol{\Phi}$ construites, la covariance attribuable aux facteurs communs est :
+
+$$
+\boldsymbol{\Sigma}_{c}
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}.
+$$
+
+La diagonale de cette matrice contient les communalités :
+
+$$
+h_i^2
+=
+\left[
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}
+\right]_{ii}.
+$$
+
+La communalité représente la variance de la variable $i$ qui est attribuable aux facteurs communs dans la structure de référence.
+
+Lorsque les facteurs sont indépendants, cette expression se réduit à la somme des charges au carré :
+
+$$
+h_i^2
+=
+\sum_j\lambda_{ij}^2.
+$$
+
+Lorsque les facteurs sont corrélés, leurs relations contribuent également à la variance commune. Il est donc incorrect, dans ce cas général, de calculer simplement la communalité comme la somme des charges au carré.
+
+## Déterminer les unicités
+
+La structure de référence est construite de manière à donner une variance totale égale à 1 à chaque variable. L'unicité de la variable $i$ est donc définie par :
+
+$$
+\theta_i
+=
+1-h_i^2.
+$$
+
+La matrice des variances résiduelles devient :
+
+$$
+\boldsymbol{\Theta}
+=
+\operatorname{diag}
+(\theta_1,\theta_2,\ldots,\theta_p).
+$$
+
+Les erreurs propres aux différentes variables sont indépendantes dans le générateur. Les éléments hors diagonale de $\boldsymbol{\Theta}$ sont donc nuls.
+
+Une structure pour laquelle :
+
+$$
+h_i^2\geq1
+$$
+
+est rejetée, car elle conduirait à une unicité nulle ou négative. L'application demande alors de réduire les charges principales, les charges secondaires, les charges générales ou les corrélations entre facteurs.
+
+## La matrice populationnelle des variables observées
+
+Pour la structure factorielle de référence, la matrice des variables observées est :
+
+$$
+\boldsymbol{\Sigma}
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}
++
+\boldsymbol{\Theta}.
+$$
+
+Puisque :
+
+$$
+\theta_i=1-h_i^2,
+$$
+
+la diagonale de $\boldsymbol{\Sigma}$ vaut 1. Dans la population de référence, $\boldsymbol{\Sigma}$ est donc simultanément une matrice de covariance standardisée et une matrice de corrélations.
+
+Le programme vérifie également que cette matrice est définie positive. La structure n'est acceptée que si toutes ses valeurs propres sont strictement positives à la tolérance numérique utilisée.
+
+## Générer explicitement les facteurs
+
+Le générateur ne tire pas directement les variables observées à partir de $\boldsymbol{\Sigma}$. Il produit réellement les deux composantes du modèle :
+
+$$
+\mathbf{X}
+=
+\boldsymbol{\Lambda}\mathbf{F}
++
+\boldsymbol{\varepsilon}.
+$$
+
+Dans le cas d'un seul groupe avec facteurs standardisés :
+
+$$
+\mathbf{F}
+\sim
+\mathcal{N}
+(
+\mathbf{0},
+\boldsymbol{\Phi}
+).
+$$
+
+Les scores factoriels individuels sont générés à partir d'une distribution normale multivariée possédant exactement la moyenne et la matrice factorielle requises.
+
+Cette approche rend possible l'extension multigroupe, puisque les distributions factorielles peuvent être modifiées d'un groupe à l'autre avant que les variables observées soient construites.
+
+## Générer les erreurs
+
+Le programme génère d'abord une matrice d'erreurs standard normales :
+
+$$
+z_{ni}
+\sim
+\mathcal{N}(0,1).
+$$
+
+Pour une variable $i$, ces erreurs sont ensuite multipliées par :
+
+$$
+\sqrt{\theta_i}.
+$$
+
+On obtient donc :
+
+$$
+\varepsilon_{ni}
+=
+\sqrt{\theta_i}\,z_{ni},
+$$
+
+et, dans la condition normale :
+
+$$
+\operatorname{Var}(\varepsilon_i)
+=
+\theta_i.
+$$
+
+Les variables observées sont finalement calculées observation par observation à partir des scores factoriels et de ces erreurs.
+
+## Construire les observations
+
+Pour une observation $n$ :
+
+$$
+\mathbf{x}_n
+=
+\boldsymbol{\Lambda}\mathbf{f}_n
++
+\boldsymbol{\varepsilon}_n.
+$$
+
+Sous les conditions du modèle de référence :
+
+$$
+E(\mathbf{X})
+=
+\mathbf{0}
+$$
+
+et :
+
+$$
+\operatorname{Var}(\mathbf{X})
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}
++
+\boldsymbol{\Theta}.
+$$
+
+La matrice observée dans un échantillon ne sera évidemment pas exactement égale à la matrice populationnelle. La différence entre les deux provient de la fluctuation d'échantillonnage.
+
+C'est précisément cette distinction entre paramètres connus de la population et estimations obtenues à partir d'un échantillon qui rend le générateur utile pour l'apprentissage et pour la conception d'expériences de simulation [@Morris2019].
+
+## Introduire l'asymétrie
+
+Lorsque l'utilisateur demande des données asymétriques, les facteurs latents demeurent normaux. La non-normalité est introduite dans les erreurs propres aux variables plutôt que directement dans les facteurs.
+
+Ce choix permet de conserver une structure factorielle latente clairement définie tout en produisant des distributions observées qui s'éloignent de la normalité.
+
+Pour certaines variables, une erreur standard normale $z$ est transformée selon une fonction exponentielle de la forme :
+
+$$
+z^*
+=
+\exp(az),
+$$
+
+où $a$ contrôle l'intensité de la transformation.
+
+La variable transformée est ensuite recentrée et standardisée :
+
+$$
+\tilde z
+=
+\frac{z^*-\bar z^*}
+{s_{z^*}}.
+$$
+
+Enfin :
+
+$$
+\varepsilon_i
+=
+\sqrt{\theta_i}\,\tilde z_i.
+$$
+
+La transformation modifie donc la forme de la distribution sans laisser l'échelle de l'erreur dériver librement.
+
+## Une asymétrie hétérogène
+
+Toutes les variables ne deviennent pas nécessairement asymétriques. Le paramètre d'intensité sélectionné dans l'application sert également de probabilité approximative qu'une colonne d'erreurs soit transformée.
+
+Pour chaque variable :
+
+$$
+P(\text{erreur asymétrique})
+\approx a.
+$$
+
+L'intensité exacte de la transformation varie ensuite aléatoirement d'une variable à l'autre autour du niveau demandé.
+
+L'intensité de chaque variable touchée est tirée uniformément entre $\max(0{,}15;\ a/2)$ et $\min(1;\ 1{,}3\,a)$. La majorité des transformations produisent une asymétrie positive, mais certaines sont inversées afin de produire une asymétrie négative. Dans le programme, la direction positive est choisie avec une probabilité de 0,75 et la direction négative avec une probabilité de 0,25.
+
+Cette stratégie évite de produire un ensemble artificiel dans lequel toutes les variables posséderaient exactement la même asymétrie.
+
+## Passer à plusieurs groupes
+
+Avec plusieurs groupes, le modèle général devient :
+
+$$
+\mathbf{X}_g
+=
+\boldsymbol{\Lambda}\mathbf{F}_g
++
+\boldsymbol{\varepsilon}_g.
+$$
+
+La même matrice de charges $\boldsymbol{\Lambda}$ est utilisée dans tous les groupes, tout comme la matrice résiduelle $\boldsymbol{\Theta}$. Les différences entre groupes sont introduites dans la distribution des facteurs.
+
+Pour le groupe $g$ :
+
+$$
+\mathbf{F}_g
+\sim
+\mathcal{N}
+(
+\boldsymbol{\mu}_{F,g},
+\boldsymbol{\Phi}_g
+).
+$$
+
+Deux éléments peuvent donc varier : le vecteur de moyennes factorielles $\boldsymbol{\mu}_{F,g}$ et la matrice de covariance factorielle $\boldsymbol{\Phi}_g$.
+
+## Les moyennes factorielles
+
+Le groupe `G1` constitue toujours la population de référence :
+
+$$
+\boldsymbol{\mu}_{F,1}
+=
+\mathbf{0}.
+$$
+
+Les niveaux de différences proposés dans l'application correspondent actuellement aux déplacements suivants :
+
+| Niveau | Déplacement factoriel |
+|---|---:|
+| Aucun | 0 |
+| Faible | 0,25 |
+| Modéré | 0,50 |
+| Fort | 0,80 |
+
+Pour les groupes suivants, le déplacement est appliqué successivement à différents facteurs. Par exemple, avec plusieurs facteurs, `G2` est d'abord déplacé sur $F_1$, `G3` sur $F_2$, puis ainsi de suite.
+
+Lorsque le nombre de groupes excède le nombre de facteurs, une seconde composante négative est ajoutée afin d'éviter que plusieurs groupes reçoivent exactement le même profil latent.
+
+Le mécanisme n'essaie donc pas de faire entrer toutes les différences possibles entre groupes dans l'interface. Il crée automatiquement des profils latents distincts à partir d'un niveau général choisi par l'utilisateur.
+
+## Des moyennes latentes aux moyennes observées
+
+Puisque :
+
+$$
+\mathbf{X}_g
+=
+\boldsymbol{\Lambda}\mathbf{F}_g
++
+\boldsymbol{\varepsilon}_g
+$$
+
+et que les erreurs ont une moyenne nulle :
+
+$$
+E(\mathbf{X}_g)
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\mu}_{F,g}.
+$$
+
+Le vecteur de moyennes des variables observées du groupe $g$ est donc :
+
+$$
+\boldsymbol{\mu}_{X,g}
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\mu}_{F,g}.
+$$
+
+Une différence latente se propage ainsi de manière cohérente aux indicateurs. Une variable fortement chargée sur le facteur déplacé présentera généralement une différence de moyenne plus importante qu'un indicateur faiblement lié à ce facteur.
+
+## Faire varier les covariances entre groupes
+
+Le groupe `G1` utilise également la structure factorielle de référence. Lorsque les covariances sont déclarées égales :
+
+$$
+\boldsymbol{\Phi}_g
+=
+\boldsymbol{\Phi}
+$$
+
+pour tous les groupes.
+
+Lorsque l'utilisateur demande une différence modérée ou forte, le générateur modifie à la fois certaines corrélations factorielles et certains écarts-types factoriels.
+
+Les amplitudes utilisées actuellement sont :
+
+$$
+c=0.20
+$$
+
+pour une différence modérée et :
+
+$$
+c=0.40
+$$
+
+pour une différence forte.
+
+Les corrélations sont déplacées alternativement de $+c$ ou de $-c$ selon le groupe et la paire de facteurs. Elles sont ensuite limitées à l'intervalle :
+
+$$
+[-0.80,\;0.80].
+$$
+
+Si la matrice obtenue n'est plus admissible, elle est ramenée vers une matrice de corrélations définie positive.
+
+## Faire varier les variances factorielles
+
+Les différences de covariance ne sont pas limitées aux corrélations. L'écart-type d'un facteur sélectionné varie également selon le groupe.
+
+Notons :
+
+$$
+\mathbf{D}_g
+=
+\operatorname{diag}
+(
+\sigma_{F_1,g},
+\ldots,
+\sigma_{F_m,g}
+).
+$$
+
+À partir de la matrice de corrélations factorielle du groupe $\mathbf{R}_g$, la covariance factorielle devient :
+
+$$
+\boldsymbol{\Phi}_g
+=
+\mathbf{D}_g
+\mathbf{R}_g
+\mathbf{D}_g.
+$$
+
+Cette distinction explique pourquoi l'application permet d'afficher séparément les **corrélations** et les **covariances** factorielles.
+
+Deux groupes peuvent avoir des relations corrélationnelles relativement proches tout en présentant des variances latentes différentes.
+
+## La covariance observée propre à chaque groupe
+
+Puisque $\boldsymbol{\Phi}_g$ peut varier, la covariance des variables observées devient :
+
+$$
+\boldsymbol{\Sigma}_{X,g}
+=
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}_g
+\boldsymbol{\Lambda}^{\mathsf T}
++
+\boldsymbol{\Theta}.
+$$
+
+La structure de mesure reste donc commune :
+
+$$
+\boldsymbol{\Lambda}_1
+=
+\cdots
+=
+\boldsymbol{\Lambda}_G
+=
+\boldsymbol{\Lambda},
+$$
+
+mais les matrices de covariance observées peuvent être différentes.
+
+Cette propriété est précisément ce qui permet d'utiliser le même générateur pour créer une condition à covariance commune adaptée à la LDA ou, au contraire, des groupes à covariances différentes permettant d'étudier la QDA.
+
+## Une nuance sur les communalités multigroupes
+
+La matrice $\boldsymbol{\Theta}$ est déterminée par les communalités de la structure factorielle de référence :
+
+$$
+h_i^2
+=
+\operatorname{diag}
+\left(
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}
+\boldsymbol{\Lambda}^{\mathsf T}
+\right)_i.
+$$
+
+Elles servent ensuite à déterminer la matrice commune $\boldsymbol{\Theta}$.
+
+Lorsque les variances factorielles diffèrent entre groupes, la quantité de variance commune d'une variable peut cependant différer de celle de la population de référence :
+
+$$
+h_{ig}^2
+=
+\left[
+\boldsymbol{\Lambda}
+\boldsymbol{\Phi}_g
+\boldsymbol{\Lambda}^{\mathsf T}
+\right]_{ii}.
+$$
+
+La variance totale de l'item vaut alors $h_{ig}^2 + \theta_i$, qui n'est plus égale à 1. Dans **Structure populationnelle → Structure des variables**, le sélecteur de groupe affiche la communalité standardisée propre à chaque groupe, $h_{ig}^2/(h_{ig}^2+\theta_i)$; le corrigé enseignant donne celle du groupe de référence.
+
+Ce choix est cohérent avec l'objectif du générateur : conserver une structure de mesure commune ($\boldsymbol{\Lambda}$ et $\boldsymbol{\Theta}$) tout en permettant aux distributions latentes de varier.
+
+## Générer les groupes
+
+Les scores factoriels sont générés séparément pour chaque groupe :
+
+$$
+\mathbf{F}_{g}
+\sim
+\mathcal{N}
+(
+\boldsymbol{\mu}_{F,g},
+\boldsymbol{\Phi}_g
+).
+$$
+
+Si le groupe contient $n_g$ observations, le générateur produit $n_g$ vecteurs de scores correspondant à cette population.
+
+Les groupes sont ensuite réunis dans un seul jeu de données et une variable `Groupe` indique l'origine de chaque observation.
+
+L'effectif total est :
+
+$$
+N
+=
+\sum_{g=1}^{G}n_g.
+$$
+
+Cette structure permet d'exporter un seul fichier qui peut ensuite être utilisé directement dans les procédures multigroupes, la MANOVA ou les méthodes de classification.
+
+## Transformer les réponses continues en catégories Likert
+
+Le modèle factoriel produit d'abord une réponse continue $X_{ij}^{*}$ pour la personne $i$ et l'item $j$. Lorsque le format Likert à $K$ catégories est choisi ($2 \le K \le 7$), cette réponse est transformée en une catégorie $Y_{ij}$ de 1 à $K$ à l'aide de $K-1$ seuils :
+
+$$
+Y_{ij}
+=
+1+
+\sum_{k=1}^{K-1}
+\mathbb{I}
+\left(X_{ij}^{*}>\tau_{jk}\right),
+\qquad
+\tau_{jk} = \Phi^{-1}(c_{k}),
+$$
+
+où $c_1 < \cdots < c_{K-1}$ sont des probabilités cumulées qui dépendent du profil. Pour $K = 5$, le générateur utilise des valeurs fixes; pour les autres nombres de catégories, une règle générale, avec $u_k = k/K$ :
+
+| Profil | $K = 5$ : $c_1, \ldots, c_4$ | Autres $K$ : $c_k$ |
+|---|---|---|
+| Équilibré | 0,20; 0,40; 0,60; 0,80 | $u_k$ |
+| Centré symétrique | $\Phi(-1{,}5); \Phi(-0{,}5); \Phi(0{,}5); \Phi(1{,}5)$ | $\Phi$ de $K-1$ valeurs également espacées entre −1,5 et 1,5 (0,5 si $K = 2$) |
+| Surtout bas | 0,50; 0,72; 0,87; 0,95 | $1-(1-u_k)^{2,2}$ |
+| Surtout haut | 0,05; 0,13; 0,28; 0,50 | $u_k^{2,2}$ |
+
+: Probabilités cumulées des seuils Likert selon le profil. {#tbl-seuils}
+
+```{r}
+#| label: fig-profils-likert
+#| fig-cap: "Proportion attendue de chaque catégorie dans le groupe de référence pour une réponse continue normale centrée réduite, selon le profil des seuils, pour 5 et 7 catégories."
+#| fig-height: 3.6
+pf <- do.call(rbind, lapply(c(5, 7), function(k) do.call(rbind, lapply(c("balanced", "centered", "low", "high"), function(pr) {
+  cp <- c(0, likert_thresholds(pr, k)$probabilities, 1)
+  data.frame(K = paste0(k, " catégories"), profil = likert_profile_labels[[pr]], cat = factor(seq_len(k)), prop = diff(cp))
+}))))
+pf$profil <- factor(pf$profil, levels = likert_profile_labels)
+ggplot(pf, aes(cat, prop)) + geom_col(fill = pal$bleu, width = 0.75) +
+  facet_grid(K ~ profil, scales = "free_x", space = "free_x") +
+  scale_y_continuous(labels = function(x) pc(x, 0)) +
+  labs(x = "Catégorie", y = "Proportion attendue") +
+  theme(strip.text.y = element_text(angle = 0))
+```
+
+Dans le mode à profils variés, chaque item reçoit de façon reproductible l'un de ces profils; les probabilités de sélection sont respectivement 40 %, 25 %, 17,5 % et 17,5 %. Les seuils attribués à un item restent les mêmes dans tous les groupes, sauf lorsqu'un scénario de DIF est explicitement demandé.
+
+Cette opération est une **ordinalisation** : elle conserve l'ordre des réponses mais compresse leur information métrique. C'est pourquoi les corrélations de Pearson obtenues à partir des codes 1 à $K$ peuvent être plus faibles que les corrélations continues sous-jacentes.
+
+## Introduire des styles de réponse
+
+Les styles de réponse sont appliqués à un sous-ensemble de personnes avant l'ordinalisation, jamais item par item. Pour une proportion choisie de répondants, le générateur transforme toutes leurs réponses continues :
+
+- tendance au milieu : $X_{ij}^{*}\leftarrow0{,}45X_{ij}^{*}$;
+- tendance aux extrêmes : $X_{ij}^{*}\leftarrow1{,}75X_{ij}^{*}$;
+- acquiescement : $X_{ij}^{*}\leftarrow X_{ij}^{*}+0{,}45$.
+
+Le style constitue donc une variance de méthode cohérente entre les items d'une même personne. Il est ensuite documenté dans le paquet enseignant, mais non dans le paquet étudiant.
+
+## Introduire une non-invariance scalaire ciblée
+
+La condition de référence utilise des paramètres de mesure identiques dans les groupes. L'application peut créer une violation ciblée pour un item choisi aléatoirement dans `G2`.
+
+Pour les données continues, un décalage d'intercept de $0{,}60$ est ajouté :
+
+$$
+X_{ij}^{*}\leftarrow X_{ij}^{*}+0{,}60.
+$$
+
+Pour les données Likert, tous les seuils de l'item sont plutôt décalés de $0{,}60$ :
+
+$$
+\tau_{jk,G2}
+=
+\tau_{jk}+0{,}60,
+\qquad k=1,\ldots,K-1.
+$$
+
+À niveau latent égal, le premier mécanisme augmente la moyenne continue observée, tandis que le second diminue la probabilité des catégories élevées. Ces scénarios ne modifient ni les charges ni les facteurs latents.
+
+## Introduire des données manquantes
+
+Après les transformations de réponse, le générateur remplace exactement une proportion cible de cellules d'items par `NA`. Soit $R_{ij}$ l'indicateur de réponse observée : $R_{ij}=1$ lorsque la cellule est conservée et $R_{ij}=0$ lorsqu'elle devient manquante.
+
+Exactement $\operatorname{round}(N\,p\,r)$ cellules sont masquées, où $r$ est le taux demandé. Elles sont tirées sans remise avec des poids :
+
+- **MCAR** : poids égaux pour toutes les cellules;
+- **MAR** : une variable auxiliaire $A$ est tirée parmi les items et reste complète; la cellule $(i, j)$, $j \neq A$, reçoit le poids $\exp(0{,}85\, z_{iA})$, où $z_{iA}$ est la valeur standardisée de la réponse continue de la personne $i$ à $A$;
+- **MNAR** : la cellule $(i, j)$ reçoit le poids $\exp(0{,}85\, z_{ij})$, où $z_{ij}$ est la valeur standardisée de sa propre réponse continue sous-jacente.
+
+Les exposants sont limités à l'intervalle $[-5;\ 5]$. Sous MAR et MNAR, une personne située à un écart-type au-dessus de la moyenne a ainsi environ $e^{1{,}7} \approx 5{,}5$ fois plus de chances de perdre une réponse qu'une personne située à un écart-type au-dessous.
+
+Les données remises aux étudiants ne révèlent que les cellules vides. Le mécanisme, le taux réalisé, la variable auxiliaire MAR et les données complètes avant suppression sont réservés au corrigé enseignant. Les corrélations descriptives de l'application utilisent les observations disponibles pour chaque paire de variables.
+
+## La population globale lorsqu'il existe plusieurs groupes
+
+Lorsque plusieurs populations sont réunies, leur moyenne globale est une moyenne pondérée.
+
+Avec :
+
+$$
+w_g
+=
+\frac{n_g}{N},
+$$
+
+on obtient :
+
+$$
+\boldsymbol{\mu}
+=
+\sum_{g=1}^{G}
+w_g
+\boldsymbol{\mu}_{X,g}.
+$$
+
+La covariance de la population mélangée n'est pas simplement la moyenne des covariances propres aux groupes. Elle comprend également la variation attribuable aux différences entre leurs centres :
+
+$$
+\boldsymbol{\Sigma}_{\text{globale}}
+=
+\sum_{g=1}^{G}
+w_g
+\left[
+\boldsymbol{\Sigma}_{X,g}
++
+(
+\boldsymbol{\mu}_{X,g}
+-
+\boldsymbol{\mu}
+)
+(
+\boldsymbol{\mu}_{X,g}
+-
+\boldsymbol{\mu}
+)^{\mathsf T}
+\right].
+$$
+
+Le premier terme représente la variation **à l'intérieur des groupes**, tandis que le second représente la variation **entre les groupes**.
+
+Cette décomposition explique pourquoi la matrice calculée sur toutes les observations peut changer même lorsque les matrices de covariance internes sont identiques. De simples différences entre les moyennes des groupes suffisent à modifier la covariance globale.
+
+## Population et échantillon
+
+Le générateur distingue deux objets conceptuellement différents. Les paramètres $\boldsymbol{\Lambda}$, $\boldsymbol{\Phi}$, $\boldsymbol{\Theta}$, $\boldsymbol{\mu}_{F,g}$ et $\boldsymbol{\Phi}_g$ décrivent la population construite. Les observations produites à partir de ces paramètres constituent un échantillon aléatoire.
+
+Si :
+
+$$
+\mathbf{R}
+$$
+
+désigne la matrice de corrélations calculée sur l'échantillon, il n'est donc pas attendu que :
+
+$$
+\mathbf{R}
+=
+\boldsymbol{\Sigma}
+$$
+
+exactement.
+
+Lorsque $N$ augmente, les statistiques échantillonnales tendent généralement à se rapprocher de leurs valeurs populationnelles. Avec un petit échantillon, des différences parfois importantes peuvent apparaître uniquement par fluctuation aléatoire [@MacCallum1999].
+
+Cette possibilité de confronter directement une estimation à la population qui l'a produite constitue l'un des principaux intérêts pédagogiques de la simulation.
+
+## Population, échantillon et reproductibilité
+
+De nombreux éléments du générateur sont aléatoires. Le programme les tire en deux temps, toujours dans le même ordre.
+
+1. **Les tirages qui définissent la population** : nombre d'indicateurs (option aléatoire), corrélations entre facteurs (option aléatoire), charges principales, secondaires et générales, items inversés, variables à erreur asymétrique et intensité de leur asymétrie, item touché par le DIF, profils Likert variés et variable auxiliaire MAR.
+2. **Les tirages qui définissent l'échantillon** : scores factoriels, erreurs, répondants présentant un style de réponse et cellules manquantes.
+
+Avant le premier tirage, le programme fixe la graine de R. Si le champ est vide, l'application tire d'abord une graine au hasard et l'affiche. Les mêmes réglages et la même graine reproduisent donc exactement la même population **et** le même échantillon. Une autre graine donne en général une autre population de la même famille.
+
+Le bouton **Nouvel échantillon, même population** relance le programme avec la graine de la population, puis fixe une seconde graine, celle de l'échantillon, juste avant la deuxième étape. La population est alors identique au tirage près, et seules les personnes changent. Les deux graines, affichées et consignées dans le corrigé enseignant, suffisent pour reproduire exactement le jeu obtenu.
+
+Comme les tirages de la population précèdent ceux des personnes, changer seulement la taille des groupes, avec la même graine, conserve aussi la population.
+
+## Ce que le générateur contrôle directement
+
+Le générateur permet de contrôler ou de faire varier :
+
+- le nombre de facteurs;
+- le nombre d'indicateurs;
+- l'intensité des charges principales;
+- la présence et l'intensité des charges secondaires;
+- la proportion d'items inversés;
+- les corrélations entre facteurs, ou une structure bifactorielle et l'intensité du facteur général;
+- la normalité ou l'asymétrie des erreurs;
+- le format continu ou Likert (2 à 7 catégories) des réponses et les profils de seuils;
+- les styles de réponse Likert;
+- le nombre de groupes;
+- leurs tailles;
+- les différences de moyennes factorielles;
+- les différences de corrélations et de variances factorielles;
+- une violation ciblée d'intercept ou de seuils dans `G2`;
+- des données manquantes MCAR, MAR ou MNAR;
+- la reproductibilité des tirages, au niveau de la population et de l'échantillon.
+
+Ces mécanismes suffisent à produire un grand nombre de populations utiles pour l'AFE, la CFA, les analyses multigroupes, la MANOVA, la classification et la corrélation canonique.
+
+## Ce que le générateur ne contrôle pas directement
+
+L'application n'est pas un langage général de simulation SEM. L'utilisateur ne peut pas saisir librement chaque élément de $\boldsymbol{\Lambda}$, chaque variance résiduelle, chaque moyenne factorielle ou chaque matrice de covariance propre à un groupe.
+
+Il n'est donc pas possible, par exemple, de demander directement :
+
+$$
+\lambda_{31,G1}=0.80
+$$
+
+et :
+
+$$
+\lambda_{31,G2}=0.45,
+$$
+
+tout en laissant tous les autres paramètres identiques.
+
+De même, l'application n'est pas conçue pour spécifier librement les intercepts ou les seuils de chaque item et groupe, les corrélations résiduelles, plus de sept catégories ordinales, des items tau-équivalents de précisions différentes, des relations structurelles entre facteurs ou des distributions multivariées arbitraires.
+
+Ces possibilités nécessiteraient un moteur de simulation beaucoup plus général et une interface considérablement plus complexe.
+
+## Pourquoi conserver cette simplicité
+
+L'objectif du générateur n'est pas de remplacer un programme de simulation spécialisé. Il consiste à rendre visibles et manipulables quelques propriétés fondamentales d'une population multivariée.
+
+Cette simplicité permet de raisonner en termes de mécanisme générateur : qu'arrive-t-il lorsque les charges diminuent? lorsque les facteurs deviennent plus corrélés? lorsque les groupes s'éloignent? lorsque leurs covariances deviennent différentes? lorsque l'échantillon diminue?
+
+Une bonne simulation pédagogique ne nécessite pas nécessairement le plus grand nombre possible de paramètres. Elle nécessite surtout que les paramètres disponibles correspondent clairement aux concepts que l'on souhaite manipuler.
+
+## Du modèle factoriel au générateur multivarié
+
+Le modèle :
+
+$$
+\mathbf{X}
+=
+\boldsymbol{\Lambda}\mathbf{F}
++
+\boldsymbol{\varepsilon}
+$$
+
+constitue finalement le cœur de l'application, mais il n'en limite pas l'usage à l'analyse factorielle.
+
+Il permet de construire efficacement une matrice de covariance structurée, des groupes ayant des centres différents, des populations ayant des covariances communes ou différentes et des ensembles de variables reliés par des dimensions communes.
+
+C'est pourquoi les mêmes données peuvent ensuite être étudiées au moyen d'une AFE, d'une CFA, d'une MANOVA, d'une LDA, d'une QDA ou d'une corrélation canonique. Dans chacun de ces cas, le modèle factoriel a simplement servi à fabriquer une population dont nous connaissons les propriétés.
+
+Le principe général de l'application peut ainsi être résumé en trois étapes :
+
+$$
+\text{Structure populationnelle}
+\longrightarrow
+\text{Échantillon simulé}
+\longrightarrow
+\text{Analyse statistique}.
+$$
+
+La force de la simulation réside dans le fait que, contrairement à une analyse de données réelles, nous connaissons ici le premier terme de cette séquence. Nous pouvons donc juger ce que l'analyse statistique parvient — ou ne parvient pas — à retrouver.
